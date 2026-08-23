@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.0 — 2026-08-23
+
+- **First stable release** (published on pub.dev as flutter_handbreak).
+- Documentation restructure: clean README + detailed docs under `docs/`
+  (API reference, quality model, platform matrix, architecture, migration roadmap).
+- Full validation: analyze clean, 94 unit tests green, Swift typecheck clean,
+  pub.dev dry-run 0 warnings.
+
 ## 0.3.1 — 2026-08-23 (audit v3: crash & concurrency hardening)
 
 - Android: semaphore no longer acquired on the main thread (ANR fix) — queued jobs wait on the worker.
