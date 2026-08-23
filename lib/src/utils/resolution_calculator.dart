@@ -73,7 +73,8 @@ class ResolutionCalculator {
     h = h.clamp(modulus, 7680);
 
     // never upscale unless explicitly asked via targetWidth/targetHeight/scale
-    final isExplicitUpscale = targetWidth != null || targetHeight != null || scale != null;
+    final isExplicitUpscale =
+        targetWidth != null || targetHeight != null || scale != null;
     if (!isExplicitUpscale) {
       if (w > srcWidth || h > srcHeight) {
         w = _alignToModulus(srcWidth, modulus);
@@ -86,7 +87,11 @@ class ResolutionCalculator {
 
   /// Correct width/height for rotation metadata (HandBrake's title->geometry + rotation fix).
   /// Rotation 90/270 swaps dimensions.
-  static ({int width, int height}) applyRotation(int width, int height, int rotationDegrees) {
+  static ({int width, int height}) applyRotation(
+    int width,
+    int height,
+    int rotationDegrees,
+  ) {
     final r = rotationDegrees % 360;
     if (r == 90 || r == 270) return (width: height, height: width);
     return (width: width, height: height);
@@ -102,19 +107,28 @@ class ResolutionCalculator {
   }
 
   /// Estimate total frames for progress denominator (like job->frame_count from duration×fps).
-  static int estimateTotalFrames({required int durationMs, required double fps}) {
+  static int estimateTotalFrames({
+    required int durationMs,
+    required double fps,
+  }) {
     if (durationMs <= 0 || fps <= 0) return 0;
     return ((durationMs / 1000.0) * fps).round();
   }
 
   /// Progress math matching sync.c: progress = frame_count / est_frame_count, clamped.
-  static double progress({required int encodedFrames, required int totalFrames}) {
+  static double progress({
+    required int encodedFrames,
+    required int totalFrames,
+  }) {
     if (totalFrames <= 0) return 0;
     return (encodedFrames / totalFrames).clamp(0.0, 1.0);
   }
 
   /// Remaining wall-clock estimate — like HandBrake's estimatedRemaining derived from fps.
-  static Duration? estimatedRemaining({required double progress, required Duration elapsed}) {
+  static Duration? estimatedRemaining({
+    required double progress,
+    required Duration elapsed,
+  }) {
     if (progress <= 0 || progress >= 1) return null;
     final totalMs = elapsed.inMilliseconds / progress;
     final remainMs = (totalMs - elapsed.inMilliseconds).round();

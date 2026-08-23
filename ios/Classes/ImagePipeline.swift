@@ -22,8 +22,11 @@ enum ImagePipeline {
             return
         }
 
-        guard let srcData = try? Data(contentsOf: URL(fileURLWithPath: inputPath)),
-              let source = CGImageSourceCreateWithData(srcData as CFData, nil),
+        // Audit P1-8: use a URL-based source — ImageIO decodes lazily and we
+        // NEVER load the entire file into memory (Data(contentsOf:) OOM risk
+        // on huge images).
+        let sourceURL = URL(fileURLWithPath: inputPath)
+        guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
               CGImageSourceGetCount(source) > 0 else {
             manager.fail(job: job, code: "INVALID_INPUT", message: "Not a decodable image")
             return
@@ -86,7 +89,16 @@ enum ImagePipeline {
         if format == "auto" || format.isEmpty {
             format = hasAlpha ? "png" : "jpeg"
         }
-        let uti = utiFor(format)
+        // Honesty (audit P1-7 parity): if the requested format cannot be written
+        // by this device, fall back to JPEG AND report it with a warning — never
+        // claim a codec that wasn't actually produced.
+        var warnings: [String] = []
+        var uti = utiFor(format)
+        if uti == nil || !destinationTypeAvailable(uti!) {
+            if uti != nil { warnings.append("\(format) encoding unavailable on this device; wrote JPEG instead.") }
+            format = "jpeg"
+            uti = "public.jpeg"
+        }
         guard let uti else {
             manager.fail(job: job, code: "UNSUPPORTED_FORMAT", message: "Unsupported image format: \(format)")
             return
@@ -107,12 +119,13 @@ enum ImagePipeline {
             return
         }
 
+        // Lossy quality applies to jpeg/webp/heic; png is lossless (no knob).
         var encOpts: [CFString: Any] = [:]
         switch uti {
         case "public.jpeg", "public.heic", "org.webmproject.webp":
             encOpts[kCGImageDestinationLossyCompressionQuality] = Double(quality) / 100.0
         default:
-            break // png lossless — no quality knob
+            break
         }
         if preserveExif, let exifSrc = props[kCGImagePropertyExifDictionary] as? [CFString: Any],
            let gpsSrc = props[kCGImagePropertyGPSDictionary] as? [CFString: Any] {
@@ -145,7 +158,8 @@ enum ImagePipeline {
                                              inSize: inSize, outSize: inSize, startMs: startMs,
                                              usedHw: false, codecId: format, container: format,
                                              keptOriginal: true)
-            r["qualityWarning"] = "Output would be larger than source (\(format)); original kept."
+            warnings.append("Output would be larger than source (\(format)); original kept.")
+            r["qualityWarning"] = warnings.joined(separator: " ")
             manager.complete(job: job, result: r)
             return
         }
@@ -157,8 +171,15 @@ enum ImagePipeline {
                                          keptOriginal: false)
         r["compressionRatio"] = Double(inSize) / Double(outSize)
         r["compressionPercentage"] = inSize > 0 ? Double(saved) / Double(inSize) * 100 : 0.0
-        r["qualityWarning"] = NSNull()
+        r["qualityWarning"] = warnings.isEmpty ? NSNull() : warnings.joined(separator: " ")
         manager.complete(job: job, result: r)
+    }
+
+    /// Ask ImageIO whether this device can actually write the given UTI
+    /// (audit P1-7: never advertise formats the device cannot encode).
+    private static func destinationTypeAvailable(_ uti: String) -> Bool {
+        let types = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
+        return types.contains(uti)
     }
 
     private static func emit(_ m: JobManager, _ j: Job, _ p: Double, stage: String) {

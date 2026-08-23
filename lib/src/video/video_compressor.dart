@@ -31,7 +31,8 @@ class VideoCompressor {
     VideoCompressionOptions options = const VideoCompressionOptions(),
     String? outputPath,
   }) async {
-    final job = await start(inputPath, options: options, outputPath: outputPath);
+    final job =
+        await start(inputPath, options: options, outputPath: outputPath);
     try {
       return await job.result;
     } finally {
@@ -55,31 +56,36 @@ class VideoCompressor {
   }) async {
     options.validate();
     Validation.requireFileExists(inputPath);
-    final out = _resolveOutputPath(inputPath, outputPath, options.container.extension);
-    Validation.requireOutputWritable(out, overwriteExisting: options.overwriteExisting);
+    final out =
+        _resolveOutputPath(inputPath, outputPath, options.container.extension);
+    Validation.requireOutputWritable(
+      out,
+      overwriteExisting: options.overwriteExisting,
+    );
     Validation.requireNotSameFile(inputPath, out);
 
     final impl = platform();
 
-    // Probe source — required for safe plan resolution (HandBrake scans before encode).
-    final info = await impl.probe(inputPath);
+    // Probe + capabilities in parallel — both are native I/O (audit P2-6).
+    // Capabilities are best-effort: any failure degrades to software-only.
+    final infoFuture = impl.probe(inputPath);
+    final capsFuture = impl
+        .getHardwareCapabilities()
+        .then<HardwareCapabilities?>((c) => c)
+        .catchError((Object _) => null);
+    final (info, capsOpt) = await (infoFuture, capsFuture).wait;
+    final caps = capsOpt ??
+        HardwareCapabilities(
+          supportsHardwareH264Encode: false,
+          supportsHardwareH265Encode: false,
+          supportsHardwareAv1Encode: false,
+          supportsHardwareVp9Encode: false,
+          supportsHardwareDecode: false,
+          platform: _platformName(impl),
+        );
 
-    // Real device capabilities; best-effort — assume software-only on failure.
-    HardwareCapabilities caps;
-    try {
-      caps = await impl.getHardwareCapabilities();
-    } on HandbreakException {
-      caps = HardwareCapabilities(
-        supportsHardwareH264Encode: false,
-        supportsHardwareH265Encode: false,
-        supportsHardwareAv1Encode: false,
-        supportsHardwareVp9Encode: false,
-        supportsHardwareDecode: false,
-        platform: _platformName(impl),
-      );
-    }
-
-    final plan = EncodePlanResolver.resolve(info: info, opts: options, caps: caps);
+    final plan =
+        EncodePlanResolver.resolve(info: info, opts: options, caps: caps);
 
     final jobId = await impl.startVideoCompression(
       inputPath: inputPath,
@@ -90,7 +96,8 @@ class VideoCompressor {
     final progress = impl.progressStream(jobId);
     final resultFuture = impl.waitForResult(jobId).timeout(
           const Duration(hours: 6),
-          onTimeout: () => throw const EncodingException('Compression timed out'),
+          onTimeout: () =>
+              throw const EncodingException('Compression timed out'),
         );
 
     return CompressionJob(
@@ -117,13 +124,19 @@ class VideoCompressor {
 
   static String _platformName(HandbreakPlatform impl) {
     try {
-      return impl.runtimeType.toString().contains('MethodChannel') ? 'host' : 'unknown';
+      return impl.runtimeType.toString().contains('MethodChannel')
+          ? 'host'
+          : 'unknown';
     } catch (_) {
       return 'unknown';
     }
   }
 
-  static String _resolveOutputPath(String inputPath, String? desired, String extension) {
+  static String _resolveOutputPath(
+    String inputPath,
+    String? desired,
+    String extension,
+  ) {
     if (desired != null && desired.isNotEmpty) return desired;
     final dir = File(inputPath).parent.path;
     final base = File(inputPath).uri.pathSegments.last.split('.').first;

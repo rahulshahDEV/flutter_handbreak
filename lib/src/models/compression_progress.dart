@@ -26,13 +26,15 @@ class CompressionProgress {
 
   double get progressPercent => progress * 100;
 
-  Duration? get estimatedRemaining =>
-      estimatedRemainingMs != null ? Duration(milliseconds: estimatedRemainingMs!) : null;
+  Duration? get estimatedRemaining => estimatedRemainingMs != null
+      ? Duration(milliseconds: estimatedRemainingMs!)
+      : null;
 
   Duration get processedDuration => Duration(milliseconds: processedDurationMs);
   Duration get totalDuration => Duration(milliseconds: totalDurationMs);
 
-  factory CompressionProgress.fromMap(Map<String, dynamic> m) => CompressionProgress(
+  factory CompressionProgress.fromMap(Map<String, dynamic> m) =>
+      CompressionProgress(
         progress: ((m['progress'] as num?)?.toDouble() ?? 0).clamp(0.0, 1.0),
         processedDurationMs: m['processedDurationMs'] as int? ?? 0,
         totalDurationMs: m['totalDurationMs'] as int? ?? 0,

@@ -152,9 +152,10 @@ enum VideoPipeline {
                 manager.fail(job: job, code: "ENCODING_ERROR", message: "Export session creation failed for preset \(preset)")
                 return
             }
-            job.task = session // cancellation hook (pipeline runs off-main; Job is lock-guarded for payload only)
+            job.setTask(session) // synchronized cancellation hook (audit P1-9)
 
-            let tmpPath = outputPath + ".tmp"
+            // Job-scoped temp file — concurrent jobs can never collide (audit P1-1).
+            let tmpPath = outputPath + ".hbtmp.\(job.id)"
             try? fm.removeItem(atPath: tmpPath)
             let tmpUrl = URL(fileURLWithPath: tmpPath)
             session.outputURL = tmpUrl
@@ -169,7 +170,7 @@ enum VideoPipeline {
             session.exportAsynchronously { done.signal() }
             done.wait()
             ticker.cancel()
-            job.task = nil
+            job.setTask(nil)
 
             switch session.status {
             case .completed: break
@@ -194,7 +195,8 @@ enum VideoPipeline {
 
             finish(job: job, manager: manager, inputPath: inputPath, outputPath: outputPath,
                    tmpPath: tmpPath, startMs: startMs, usedHw: hwEncodeAvailable,
-                   codecId: codecId, container: container, keepSmaller: keepSmaller, notes: &notes)
+                   codecId: codecId, container: container, sourceDurationMs: durationMs,
+                   keepSmaller: keepSmaller, notes: &notes)
         } catch let e as ProbeError {
             manager.fail(job: job, code: e.code, message: e.message)
         } catch {

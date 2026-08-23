@@ -7,13 +7,18 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 
 /**
  * Plugin registration + MethodChannel dispatch.
  *
- * Mirrors HandBrake's job lifecycle: each `start*Compression` creates a Job with a tmp file,
- * runs on JobManager's bounded executor, streams progress via per-job EventChannel, and
- * validates output before completing. Cancellation is idempotent and deletes partial files.
+ * Audit v3 fixes:
+ * - probe / getHardwareCapabilities run on a background executor — never on
+ *   the platform/main thread (P1-3).
+ * - onDetachedFromEngine cancels all running jobs — no orphaned encoders
+ *   draining battery after engine teardown (P1-4, parity with iOS).
+ * - waitForResult uses a shared single-thread executor, not one raw Thread
+ *   per call (P1-5).
  *
  * Large media never crosses the channel — only paths + option maps + progress ticks.
  */
@@ -31,6 +36,9 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private val jobResults = ConcurrentHashMap<String, Map<String, Any>>()
     private val jobErrors = ConcurrentHashMap<String, Map<String, Any>>()
 
+    /** Shared background executor for probe/caps/waitForResult — bounded (1 thread). */
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -41,27 +49,33 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
-        jobManager.shutdown()
+        jobManager.shutdown() // cancels all jobs — no orphaned workers (P1-4)
+        ioExecutor.shutdown()
         flutterPluginBinding = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "getHardwareCapabilities" -> {
-                try { result.success(HardwareCapabilitiesProvider.get()) }
-                catch (e: Exception) { result.error("ENCODING_ERROR", e.message, null) }
+            "getHardwareCapabilities" -> ioExecutor.execute {
+                try {
+                    val caps = HardwareCapabilitiesProvider.get()
+                    mainHandler.post { result.success(caps) }
+                } catch (e: Exception) {
+                    mainHandler.post { result.error("ENCODING_ERROR", e.message, null) }
+                }
             }
             "probe" -> {
                 val inputPath = call.argument<String>("inputPath")
                     ?: return result.error("INVALID_INPUT", "inputPath required", null)
-                try {
-                    // probe is fast; run inline
-                    val info = MediaProbe.probe(inputPath)
-                    result.success(info)
-                } catch (e: IllegalArgumentException) {
-                    result.error("INVALID_INPUT", e.message, null)
-                } catch (e: Exception) {
-                    result.error("UNSUPPORTED_FORMAT", e.message, null)
+                ioExecutor.execute {
+                    try {
+                        val info = MediaProbe.probe(inputPath)
+                        mainHandler.post { result.success(info) }
+                    } catch (e: IllegalArgumentException) {
+                        mainHandler.post { result.error("INVALID_INPUT", e.message, null) }
+                    } catch (e: Exception) {
+                        mainHandler.post { result.error("UNSUPPORTED_FORMAT", e.message, null) }
+                    }
                 }
             }
             "startVideoCompression" -> handleStartVideo(call, result)
@@ -69,18 +83,15 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "waitForResult" -> {
                 val jobId = call.argument<String>("jobId")
                     ?: return result.error("INVALID_INPUT", "jobId required", null)
-                // If already completed, return immediately; else block (but on bg thread via handler? For plugin we must not ANR — use async)
                 val cached = jobResults[jobId]
                 if (cached != null) { result.success(cached); return }
                 val err = jobErrors[jobId]
                 if (err != null) { result.success(mapOf("error" to err)); return }
-                // For waitForResult we support polling + async: launch a small thread that blocks on future
-                Thread {
+                ioExecutor.execute {
                     try {
                         val fut = jobFutures[jobId]
-                            ?: return@Thread mainHandler.post { result.error("INVALID_INPUT", "Unknown jobId $jobId", null) }
-                        val res = fut.get() // blocks until transcode finishes
-                        // future completed via jobResults population below; just return
+                            ?: return@execute mainHandler.post { result.error("INVALID_INPUT", "Unknown jobId $jobId", null) }
+                        val res = fut.get()
                         mainHandler.post { result.success(res) }
                     } catch (e: java.util.concurrent.CancellationException) {
                         mainHandler.post { result.success(mapOf("error" to mapOf("code" to "CANCELLED", "message" to "Cancelled"))) }
@@ -91,13 +102,12 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     } catch (e: Exception) {
                         mainHandler.post { result.error("ENCODING_ERROR", e.message, null) }
                     }
-                }.start()
+                }
             }
             "cancelJob" -> {
                 val jobId = call.argument<String>("jobId")
                     ?: return result.error("INVALID_INPUT", "jobId required", null)
                 jobManager.cancelJob(jobId)
-                // Also cancel future if possible
                 try { jobFutures[jobId]?.cancel(true) } catch (_: Exception) {}
                 result.success(null)
             }
@@ -126,10 +136,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val options = call.argument<Map<String, Any>>("options") ?: emptyMap()
 
         val job = jobManager.createJob()
-        // register per-job EventChannel for progress
         registerProgressChannel(job.id)
 
         val future = jobManager.submit(job) {
+            jobManager.markRunning(job.id)
             try {
                 val res = VideoTranscoder.transcode(
                     inputPath = inputPath, outputPath = outputPath, optsRaw = options,
@@ -138,7 +148,6 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     postProgress(job.id, prog)
                 }
                 jobResults[job.id] = res
-                // final progress 1.0
                 postProgress(job.id, mapOf("progress" to 1.0, "processedDurationMs" to 0, "totalDurationMs" to 0,
                     "encodedFrames" to 0, "totalFrames" to 0, "currentFps" to 0.0, "stage" to "done"))
                 closeProgress(job.id)
@@ -185,6 +194,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         registerProgressChannel(job.id)
         val opts = parseImageOptions(options)
         val future = jobManager.submit(job) {
+            jobManager.markRunning(job.id)
             try {
                 val res = ImageTranscoder.compress(inputPath, outputPath, opts, job.id, jobManager) { prog -> postProgress(job.id, prog) }
                 jobResults[job.id] = res
@@ -211,7 +221,6 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         channel.setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(args: Any?, sink: EventChannel.EventSink) {
                 eventSinks[jobId] = sink
-                // tie sink to jobManager so VideoTranscoder can emit via it
                 jobManager.getJob(jobId)?.progressSink = { prog ->
                     mainHandler.post { try { sink.success(prog) } catch (_: Exception) {} }
                 }

@@ -1,3 +1,4 @@
+// ignore_for_file: avoid_print
 // Benchmark harness — measures encode time, size, CPU, HW vs SW delta per preset.
 // Run: dart benchmark/compress_bench.dart --fixtures=benchmark/fixtures
 // Produces handbreak_bench_results.json; compare vs baseline to detect regressions.
@@ -20,8 +21,12 @@ Future<void> main(List<String> args) async {
   ];
 
   if (fixtures.isEmpty) {
-    print('No fixtures configured. Add paths in benchmark/compress_bench.dart.');
-    print('Each preset is then compressed; metrics: source size, output size, ratio, encode time, resolution, fps, codec, quality.');
+    print(
+      'No fixtures configured. Add paths in benchmark/compress_bench.dart.',
+    );
+    print(
+      'Each preset is then compressed; metrics: source size, output size, ratio, encode time, resolution, fps, codec, quality.',
+    );
     return;
   }
 

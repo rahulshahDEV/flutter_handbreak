@@ -200,8 +200,14 @@ object VideoTranscoder {
         val durationUs = durationMs * 1000
         val estTotalFrames = ((durationMs / 1000.0) * targetFps).toLong().coerceAtLeast(1L)
 
-        val tmpFile = File("$outputPath.tmp")
+        val tmpFile = File("$outputPath.hbtmp.$jobId")
         if (tmpFile.exists()) tmpFile.delete()
+        // Defense-in-depth (audit P2-5): never clobber an existing destination
+        // unless the caller explicitly allowed overwrite.
+        val overwriteExisting = optsRaw["overwriteExisting"] as? Boolean ?: false
+        if (outFile.exists() && !overwriteExisting) {
+            throw IllegalStateException("Output already exists: $outputPath (set overwriteExisting=true to replace)")
+        }
 
         val notes = mutableListOf<String>()
         plan?.containerFallbackNote()?.let(notes::add)
@@ -316,16 +322,23 @@ object VideoTranscoder {
             // ---- decoder: Surface zero-copy preferred, real ByteBuffer fallback ----
             val decMime = decFmtIn.getString(MediaFormat.KEY_MIME) ?: mime
             var surfaceMode = true
-            runCatching {
-                decoder = MediaCodec.createDecoderByType(decMime).also { d ->
-                    d.configure(decFmtIn, encoderSurface, null, 0)
-                    d.start()
-                }
-            }.onFailure {
+            var decoderCandidate: MediaCodec? = null
+            val surfaceDecodeOk = try {
+                decoderCandidate = MediaCodec.createDecoderByType(decMime)
+                decoderCandidate!!.configure(decFmtIn, encoderSurface, null, 0)
+                decoderCandidate!!.start()
+                decoder = decoderCandidate
+                true
+            } catch (e: Exception) {
+                // release the half-created decoder — no leak (audit P1-6)
+                runCatching { decoderCandidate?.stop() }
+                runCatching { decoderCandidate?.release() }
+                decoderCandidate = null
+                false
+            }
+            if (!surfaceDecodeOk) {
                 // CPU path: decode YUV_420_888 → NV12 → encoder ByteBuffer input.
                 surfaceMode = false
-                runCatching { decoder?.release() }
-                decoder = null
                 runCatching { encoder?.stop(); encoder?.release() }
                 runCatching { encoderSurface?.release() }
                 encoder = null; encoderSurface = null
@@ -380,6 +393,8 @@ object VideoTranscoder {
 
             var encodedFrames = 0L
             var lastPtsUs = 0L
+            var lastVideoPtsUs = Long.MIN_VALUE
+            var lastAudioPtsUs = Long.MIN_VALUE
             var lastProgressMs = 0L
             val timeoutUs = 10_000L
             val passBuf = ByteBuffer.allocateDirect(1 shl 17)
@@ -538,13 +553,12 @@ object VideoTranscoder {
                                 pcm.position(audDecInfo.offset).limit(audDecInfo.offset + audDecInfo.size)
                                 val srcCh = safeInt(audioDecoder!!.outputFormat, MediaFormat.KEY_CHANNEL_COUNT, 2)
                                 val mixed = Downmix.apply(pcm, srcCh, audioOutChannels)
-                                val ei = audioEncoder!!.dequeueInputBuffer(timeoutUs)
-                                if (ei >= 0) {
-                                    val eb = audioEncoder!!.getInputBuffer(ei)!!
-                                    eb.clear(); eb.put(mixed)
-                                    audioEncoder!!.queueInputBuffer(ei, 0, mixed.size, audDecInfo.presentationTimeUs, 0)
-                                }
                                 audioDecoder!!.releaseOutputBuffer(o, false)
+                                // Audit P0-2: NEVER drop a decoded PCM chunk because an
+                                // encoder input buffer was momentarily unavailable —
+                                // retry until fed or cancelled.
+                                feedPcmRetry(audioEncoder!!, mixed, audDecInfo.presentationTimeUs, timeoutUs, jobManager, jobId)
+                                noteActivity()
                             } else audioDecoder!!.releaseOutputBuffer(o, false)
                         }
                     }
@@ -571,7 +585,10 @@ object VideoTranscoder {
                     }
                 }
 
-                // 5) interleave write — strictly smaller PTS first; consumer never blocked
+                // 5) interleave write — smaller PTS first; consumer never blocked.
+                // PTS safety (audit P1-2): clamp negative timestamps to 0 and
+                // enforce per-track monotonicity so MediaMuxer never rejects the
+                // stream (negative/non-monotonic sources are real-world files).
                 if (muxerStarted) {
                     while (true) {
                         val vHead = videoQueue.peekFirst()
@@ -582,9 +599,19 @@ object VideoTranscoder {
                             else -> vHead.info.presentationTimeUs <= aHead.info.presentationTimeUs
                         }
                         if (pickVideo) {
+                            val raw = vHead.info.presentationTimeUs
+                            val norm = if (raw < 0) 0 else raw
+                            val safe = maxOf(norm, lastVideoPtsUs)
+                            vHead.info.presentationTimeUs = safe
+                            lastVideoPtsUs = safe
                             muxer.writeSampleData(videoMuxTrack, ByteBuffer.wrap(vHead.bytes), vHead.info)
                             videoQueue.pollFirst()
                         } else if (aHead != null) {
+                            val raw = aHead.info.presentationTimeUs
+                            val norm = if (raw < 0) 0 else raw
+                            val safe = maxOf(norm, lastAudioPtsUs)
+                            aHead.info.presentationTimeUs = safe
+                            lastAudioPtsUs = safe
                             muxer.writeSampleData(audioMuxTrack, ByteBuffer.wrap(aHead.bytes), aHead.info)
                             audioQueue.pollFirst()
                         } else break
@@ -612,6 +639,7 @@ object VideoTranscoder {
                             "currentFps" to fpsInst,
                             "estimatedRemainingMs" to remainMs,
                             "stage" to "encode",
+                            "state" to (jobManager.stateName(jobId) ?: "RUNNING"),
                         ),
                     )
                 }
@@ -751,6 +779,24 @@ object VideoTranscoder {
                 ib.clear()
                 ib.put(nv12)
                 encoder.queueInputBuffer(idx, 0, nv12.size, ptsUs, 0)
+                return
+            }
+        }
+    }
+
+    /** Retry PCM feed until delivered — cancellation-aware, bounded by watchdog. */
+    private fun feedPcmRetry(
+        encoder: MediaCodec, pcm: ByteArray, ptsUs: Long, timeoutUs: Long,
+        mgr: JobManager, jobId: String,
+    ) {
+        while (true) {
+            checkCancel(mgr, jobId)
+            val idx = encoder.dequeueInputBuffer(timeoutUs)
+            if (idx >= 0) {
+                val eb = encoder.getInputBuffer(idx)!!
+                eb.clear()
+                eb.put(pcm)
+                encoder.queueInputBuffer(idx, 0, pcm.size, ptsUs, 0)
                 return
             }
         }

@@ -24,7 +24,8 @@ class AudioStreamInfo {
   factory AudioStreamInfo.fromMap(Map<String, dynamic> m) => AudioStreamInfo(
         index: m['index'] as int? ?? 0,
         codec: m['codec'] as String? ?? 'unknown',
-        codecString: m['codecString'] as String? ?? m['codec'] as String? ?? 'unknown',
+        codecString:
+            m['codecString'] as String? ?? m['codec'] as String? ?? 'unknown',
         sampleRate: m['sampleRate'] as int? ?? 0,
         channelCount: m['channelCount'] as int? ?? 0,
         bitRate: m['bitRate'] as int? ?? 0,
@@ -34,8 +35,14 @@ class AudioStreamInfo {
       );
 
   Map<String, dynamic> toMap() => {
-        'index': index, 'codec': codec, 'codecString': codecString,
-        'sampleRate': sampleRate, 'channelCount': channelCount, 'bitRate': bitRate,
-        'language': language, 'title': title, 'channelLayout': channelLayout,
+        'index': index,
+        'codec': codec,
+        'codecString': codecString,
+        'sampleRate': sampleRate,
+        'channelCount': channelCount,
+        'bitRate': bitRate,
+        'language': language,
+        'title': title,
+        'channelLayout': channelLayout,
       };
 }

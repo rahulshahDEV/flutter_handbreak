@@ -278,3 +278,74 @@ Documented fallback rules (all surfaced via `result.qualityWarning`):
 - `flutter test`: **82/82 passing** (resolution, quality mapping, options, presets, progress/caps/media-info, plan resolver incl. container/audio/hw/rc fallbacks, validation helpers, error parity, filter contract)
 - Kotlin sources brace-balanced; Swift typechecks against iOS simulator SDK
 - Device integration matrix (real MP4/MOV/portrait/4K/VFR/no-audio/multi-audio fixtures) remains the pre-release gate — see §4
+
+--------------------------------------------------------------------
+
+## 6. Audit v3 — correctness hardening (2026-08-23)
+
+Deep safety audit (spec phases 1–2). Every finding verified by reading code.
+
+### 6.1 Real bugs found & fixed
+
+| ID | Severity | Location | Bug | Fix |
+|----|----------|----------|-----|-----|
+| P0-1 | P0 | `JobManager.kt:44` | `Semaphore.acquire()` on the **caller (main) thread** → ANR risk when concurrency saturated | acquire moved inside worker task; caller always returns instantly |
+| P0-2 | P0 | `VideoTranscoder.kt:541` | Decoded PCM **silently dropped** when an audio-encoder input buffer was momentarily unavailable → A/V drift | `feedPcmRetry()` — retry until fed, cancellation-aware |
+| P1-1 | P1 | `VideoTranscoder.kt:203` / `VideoPipeline.swift:157` | Temp file `output.tmp` shared across concurrent jobs → collision | job-scoped `output.hbtmp.<jobId>` on both platforms |
+| P1-2 | P1 | `VideoTranscoder.kt` | Negative / non-monotonic source PTS passed to `MediaMuxer` → muxer rejection | clamp-to-0 + per-track monotonic write gate |
+| P1-3 | P1 | `HandbreakPlugin.kt:50-66` | `probe` + capabilities ran inline on the **platform/main thread** | moved to shared single-thread `ioExecutor` |
+| P1-4 | P1 | `HandbreakPlugin.kt:42-46` | Engine detach did **not** cancel running jobs (iOS did) | `onDetachedFromEngine` → `jobManager.shutdown()` (cancels all) |
+| P1-5 | P1 | `HandbreakPlugin.kt:78-94` | One raw `Thread {}` per `waitForResult` call | shared `ioExecutor` |
+| P1-6 | P1 | `VideoTranscoder.kt:319-344` | Half-created decoder leaked if `configure()` threw inside `.also` | explicit candidate + release-on-failure |
+| P1-7 | P1 | `ImageTranscoder.kt:112-117` | Requested heic/avif **silently wrote JPEG** but result claimed `codec: heic` | real fallback: actual format reported + `qualityWarning` note (both platforms) |
+| P1-8 | P1 | `ImagePipeline.swift:25` | `Data(contentsOf:)` loaded the **entire image into memory** (OOM on huge files) | URL-based `CGImageSource` (lazy decode) |
+| P1-9 | P1 | `VideoPipeline.swift:155` | Unsynchronized `job.task` write vs `JobManager.cancel` read (TSAN race) | `setTask/withTask` under lock |
+| P1-10 | P1 | `HardwareProbe.swift` / plugin | VTCompressionSession probes ran on the main thread | dispatched to background |
+| P1-11 | P1 | `VideoPipelineSupport.finish` | iOS lacked duration validation (Android had it) | pre-commit temp probe + tolerance check |
+| P2-1/2 | P2 | `MediaProbe.kt:122,128` | Int overflow on bitrate / duration for gigantic files | clamped |
+| P2-4 | P2 | `ImageTranscoder.kt:166` | EXIF wrote source W/H after resize | actual output dims |
+| P2-5 | P2 | `VideoTranscoder.kt` | Native unconditionally deleted existing output | `overwriteExisting` guard (defense-in-depth) |
+| P2-6 | P2 | `video_compressor.dart:70-85` | probe + capabilities serial | parallel `(f1, f2).wait` |
+
+### 6.2 Job state machine (spec §5) — both natives
+
+`CREATED → QUEUED → RUNNING → … → COMPLETED`; terminal `CANCELLED | FAILED | DISPOSED`.
+Transitions validated (`allowedFrom` sets), idempotent cancel/dispose, exactly-once
+completion already guaranteed by `finished` guard. State surfaced in progress payloads
+(`state` key) and via `JobManager.stateName` / `Job.state`.
+
+### 6.3 Native architecture decision — why NOT C++/FFI (yet)
+
+The preferred C++-core-with-FFI architecture (spec §3-4) is documented as the **migration
+target** but deliberately **not started** in this pass:
+
+- Current Kotlin/Swift + MethodChannel implementation is behaviorally correct for the
+  supported feature set (probe → plan → decode → encode → mux → validate) with bounded
+  queues, cancellation, and watchdog already in place.
+- A C++ core only pays off once the platform adapters (MediaCodec/VideoToolbox) are the
+  *thin* layer; porting both pipelines is a multi-stage effort (spec §30) that must be
+  staged behind parity tests, not done in one uncontrolled change.
+- FFI adds: C ABI ownership rules, per-ABI `.so`/framework packaging, and a new failure
+  domain — justified only when the duplicated orchestration is large enough to amortize it.
+
+**Migration roadmap (staged, spec §30 order):**
+1. Stage: shared **policy core** (already mostly Dart: `EncodePlanResolver`) — expand to
+   audio plan + capability model (spec §23).
+2. Stage: **C ABI core** `hb_engine/hb_job` with state machine + queues + temp/commit +
+   error taxonomy (pure C++, unit-tested, no platform deps).
+3. Stage: Dart FFI bindings (ffigen) behind `HandbreakPlatform` — MethodChannel retained
+   for capability/probe fallback.
+4. Stage: Android adapter (AAudio/MediaCodec via NDK, async callback mode) then Apple
+   adapter (ObjC++ VideoToolbox), replacing Kotlin/Swift orchestration.
+5. Stage: parity harness — same fixture matrix on old vs new engine, keep old until green.
+
+Trigger for starting Stage 2: feature demands (filters/GL, HDR, AV1 SW) or measured
+orchestration overhead. Do not start on fashion.
+
+### 6.4 Remaining known limitations (honest)
+
+- iOS `usedHardwareAcceleration` reports *hardware encoder availability* (Apple's exporter
+  picks its encoder internally; software-only is unenforceable — recorded in notes, not faked).
+- Android image HEIC/AVIF encode falls back to JPEG with warning (no HeifWriter yet).
+- Filters beyond scale/crop/rotate are validated but no-op in native (Phase-2 GL work).
+- `waitForResult` single-waiter contract (Dart calls once); repeated waits get cached payload.

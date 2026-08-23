@@ -1,21 +1,68 @@
 import Foundation
 import AVFoundation
 
-/// Job lifecycle — mirrors HandBrake's HB_STATE_WORKING → done/error with
-/// exactly-once completion, bounded concurrency (one native encode at a time),
-/// and cancellation hooks into AVAssetExportSession / AVAssetWriter.
+/// Formal job states (spec §5) — exactly-once terminal transitions.
+enum JobState: String, CaseIterable {
+    case created = "CREATED"
+    case queued = "QUEUED"
+    case probing = "PROBING"
+    case planning = "PLANNING"
+    case initializing = "INITIALIZING"
+    case running = "RUNNING"
+    case draining = "DRAINING"
+    case validating = "VALIDATING"
+    case committing = "COMMITTING"
+    case completed = "COMPLETED"
+    case cancelled = "CANCELLED"
+    case failed = "FAILED"
+    case disposed = "DISPOSED"
+}
+
+/// Job lifecycle — deterministic state transitions, exactly-once completion,
+/// idempotent cancellation/disposal, and *synchronized* access to the
+/// cancellable task (audit P1-9: the pipeline writes `task` while `cancel`
+/// reads it — a data race under ThreadSanitizer).
 final class Job {
     let id: String
-    var isCancelled = false
-    var task: AnyObject?                       // cancellable object (export session / writer)
-    var progressSink: (([String: Any]) -> Void)?
+    private let taskLock = NSLock()
+    private var cancellableTask: AnyObject?   // AVAssetExportSession / AVAssetWriter
 
+    private let stateLock = NSLock()
+    private var _state: JobState = .created
+
+    var progressSink: (([String: Any]) -> Void)?
     var finished = false
     var resultPayload: [String: Any]?
     var errorPayload: [String: Any]?
     var continuation: (([String: Any]) -> Void)?
 
     init(id: String = UUID().uuidString) { self.id = id }
+
+    // MARK: - synchronized task access (audit P1-9)
+
+    func setTask(_ t: AnyObject?) {
+        taskLock.lock(); cancellableTask = t; taskLock.unlock()
+    }
+
+    /// Runs `body` with the current cancellable task under lock; returns nothing.
+    func withTask(_ body: (AnyObject?) -> Void) {
+        taskLock.lock(); body(cancellableTask); taskLock.unlock()
+    }
+
+    // MARK: - state machine (audit: illegal transitions rejected, idempotent)
+
+    func transition(to target: JobState, allowedFrom: Set<JobState>) {
+        stateLock.lock(); defer { stateLock.unlock() }
+        if allowedFrom.contains(_state) { _state = target }
+    }
+
+    var state: JobState {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _state
+    }
+
+    /// Convenience: cooperative cancellation checks inside pipelines.
+    var isCancelled: Bool { state == .cancelled }
 }
 
 final class JobManager {
@@ -41,9 +88,14 @@ final class JobManager {
 
     func cancel(jobId: String) {
         withJob(jobId) { j in
-            j.isCancelled = true
-            if let s = j.task as? AVAssetExportSession { s.cancelExport() }
-            if let w = j.task as? AVAssetWriter { w.cancelWriting() }
+            j.transition(to: .cancelled,
+                         allowedFrom: [.created, .queued, .probing, .planning,
+                                       .initializing, .running, .draining,
+                                       .validating, .committing])
+            j.withTask { task in
+                if let s = task as? AVAssetExportSession { s.cancelExport() }
+                if let w = task as? AVAssetWriter { w.cancelWriting() }
+            }
         }
     }
 
@@ -53,12 +105,15 @@ final class JobManager {
     }
 
     func dispose(jobId: String) {
+        // Dispose must also stop any running native work (battery/resource safety).
+        cancel(jobId: jobId)
+        withJob(jobId) { $0.transition(to: .disposed, allowedFrom: Set(JobState.allCases)) }
         lock.lock(); jobs.removeValue(forKey: jobId); lock.unlock()
     }
 
     func emitProgress(_ job: Job, _ payload: [String: Any]) {
         lock.lock()
-        let cancelled = job.isCancelled
+        let cancelled = job.state == .cancelled
         let sink = job.progressSink
         lock.unlock()
         guard !cancelled else { return }
@@ -66,6 +121,7 @@ final class JobManager {
     }
 
     func startVideo(job: Job, inputPath: String, outputPath: String, options: [String: Any]) {
+        job.transition(to: .queued, allowedFrom: [.created])
         runSerialized {
             VideoPipeline.run(job: job, manager: self, inputPath: inputPath,
                               outputPath: outputPath, options: options)
@@ -73,6 +129,7 @@ final class JobManager {
     }
 
     func startImage(job: Job, inputPath: String, outputPath: String, options: [String: Any]) {
+        job.transition(to: .queued, allowedFrom: [.created])
         runSerialized {
             ImagePipeline.run(job: job, manager: self, inputPath: inputPath,
                               outputPath: outputPath, options: options)
@@ -110,6 +167,7 @@ final class JobManager {
         let cont = job.continuation
         job.continuation = nil
         lock.unlock()
+        job.transition(to: .completed, allowedFrom: [.queued, .probing, .planning, .initializing, .running, .draining, .validating, .committing, .created])
         cont?(result)
     }
 
@@ -123,6 +181,7 @@ final class JobManager {
         job.continuation = nil
         let sink = job.progressSink
         lock.unlock()
+        job.transition(to: .failed, allowedFrom: [.queued, .probing, .planning, .initializing, .running, .draining, .validating, .committing, .created])
         sink?(["error": err])
         cont?(["error": err])
     }

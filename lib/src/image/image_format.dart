@@ -13,6 +13,17 @@ enum ImageFormat {
   static ImageFormat fromId(String id) =>
       values.firstWhere((e) => e.id == id, orElse: () => ImageFormat.auto);
 
-  bool get supportsAlpha => this == ImageFormat.png || this == ImageFormat.webp || this == ImageFormat.heic || this == ImageFormat.heif || this == ImageFormat.avif || this == ImageFormat.auto;
-  bool get isLossy => this == ImageFormat.jpeg || this == ImageFormat.webp || this == ImageFormat.heic || this == ImageFormat.heif || this == ImageFormat.avif;
+  bool get supportsAlpha =>
+      this == ImageFormat.png ||
+      this == ImageFormat.webp ||
+      this == ImageFormat.heic ||
+      this == ImageFormat.heif ||
+      this == ImageFormat.avif ||
+      this == ImageFormat.auto;
+  bool get isLossy =>
+      this == ImageFormat.jpeg ||
+      this == ImageFormat.webp ||
+      this == ImageFormat.heic ||
+      this == ImageFormat.heif ||
+      this == ImageFormat.avif;
 }

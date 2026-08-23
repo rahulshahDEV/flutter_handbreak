@@ -19,7 +19,7 @@ class AdvancedEncoderOptions {
   /// Explicit native CRF/QP numeric. If set, overrides [RateControl] quality mapping.
   final double? crf;
   final String? preset; // ultrafast..placebo / speed preset
-  final String? tune;   // film/animation/grain/psnr/ssim/fastdecode
+  final String? tune; // film/animation/grain/psnr/ssim/fastdecode
   final String? profile;
   final String? level;
   final Map<String, String> extra;
@@ -47,7 +47,8 @@ class AudioOptions {
   final AudioCodec codec;
   final int bitrateKbps;
   final int? sampleRate;
-  final String mixdown; // stereo / mono / 5point1 etc. Dart validates known values; native may ignore unsupported.
+  final String
+      mixdown; // stereo / mono / 5point1 etc. Dart validates known values; native may ignore unsupported.
 
   Map<String, dynamic> toMap() => {
         'mode': mode.name,
@@ -116,7 +117,8 @@ class VideoCompressionOptions {
   /// If compressed output would be larger than source, return original (or keep smaller).
   final bool keepOriginalIfSmaller;
 
-  /// Overwrite [outputPath] if it already exists. Default false → throws OutputCreationException.
+  /// Overwrite the destination file if it already exists. Default false →
+  /// throws OutputCreationException when the destination exists.
   final bool overwriteExisting;
 
   /// Tag for analytics/presets — not sent to native encoder.
@@ -126,13 +128,27 @@ class VideoCompressionOptions {
       quality != null ? RateControl.constantQuality(quality!) : rateControl;
 
   void validate() {
-    if (maxWidth != null && maxWidth! <= 0) throw ArgumentError('maxWidth must be > 0');
-    if (maxHeight != null && maxHeight! <= 0) throw ArgumentError('maxHeight must be > 0');
-    if (targetWidth != null && targetWidth! <= 0) throw ArgumentError('targetWidth must be > 0');
-    if (targetHeight != null && targetHeight! <= 0) throw ArgumentError('targetHeight must be > 0');
-    if (scale != null && (scale! <= 0 || scale! > 4)) throw ArgumentError('scale must be (0, 4]');
-    if (maxFrameRate != null && maxFrameRate! <= 0) throw ArgumentError('maxFrameRate must be > 0');
-    if (tempoScale <= 0 || tempoScale > 8) throw ArgumentError('tempoScale must be (0, 8]');
+    if (maxWidth != null && maxWidth! <= 0) {
+      throw ArgumentError('maxWidth must be > 0');
+    }
+    if (maxHeight != null && maxHeight! <= 0) {
+      throw ArgumentError('maxHeight must be > 0');
+    }
+    if (targetWidth != null && targetWidth! <= 0) {
+      throw ArgumentError('targetWidth must be > 0');
+    }
+    if (targetHeight != null && targetHeight! <= 0) {
+      throw ArgumentError('targetHeight must be > 0');
+    }
+    if (scale != null && (scale! <= 0 || scale! > 4)) {
+      throw ArgumentError('scale must be (0, 4]');
+    }
+    if (maxFrameRate != null && maxFrameRate! <= 0) {
+      throw ArgumentError('maxFrameRate must be > 0');
+    }
+    if (tempoScale <= 0 || tempoScale > 8) {
+      throw ArgumentError('tempoScale must be (0, 8]');
+    }
   }
 
   VideoCompressionOptions copyWith({

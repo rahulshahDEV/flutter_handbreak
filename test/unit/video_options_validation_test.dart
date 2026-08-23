@@ -18,7 +18,10 @@ void main() {
     test('scale out of range throws', () {
       const opts = VideoCompressionOptions(scale: 0);
       expect(() => opts.validate(), throwsArgumentError);
-      expect(() => const VideoCompressionOptions(scale: 5).validate(), throwsArgumentError);
+      expect(
+        () => const VideoCompressionOptions(scale: 5).validate(),
+        throwsArgumentError,
+      );
     });
     test('maxFrameRate zero throws', () {
       const opts = VideoCompressionOptions(maxFrameRate: 0);
@@ -27,14 +30,24 @@ void main() {
     test('quality convenience sets effectiveRateControl', () {
       const opts = VideoCompressionOptions(quality: VideoQuality.high);
       expect(opts.effectiveRateControl, isA<ConstantQualityRateControl>());
-      expect((opts.effectiveRateControl as ConstantQualityRateControl).quality, VideoQuality.high);
+      expect(
+        (opts.effectiveRateControl as ConstantQualityRateControl).quality,
+        VideoQuality.high,
+      );
     });
     test('rateControl takes precedence when quality not set', () {
-      const opts = VideoCompressionOptions(rateControl: RateControl.averageBitrate(2000));
+      const opts = VideoCompressionOptions(
+        rateControl: RateControl.averageBitrate(2000),
+      );
       expect(opts.effectiveRateControl, isA<AverageBitrateRateControl>());
     });
     test('toMap round-trips codec and frameRateMode', () {
-      const opts = VideoCompressionOptions(codec: VideoCodec.h265, frameRateMode: FrameRateMode.constant, maxFrameRate: 30, hardwareAcceleration: HardwareAcceleration.hardwareOnly);
+      const opts = VideoCompressionOptions(
+        codec: VideoCodec.h265,
+        frameRateMode: FrameRateMode.constant,
+        maxFrameRate: 30,
+        hardwareAcceleration: HardwareAcceleration.hardwareOnly,
+      );
       final m = opts.toMap();
       expect(m['codec'], 'h265');
       expect(m['frameRateMode'], 'constant');
@@ -42,15 +55,25 @@ void main() {
       expect(m['hardwareAcceleration'], 'hardwareOnly');
     });
     test('copyWith preserves unchanged fields', () {
-      const base = VideoCompressionOptions(codec: VideoCodec.h264, maxWidth: 1920);
+      const base =
+          VideoCompressionOptions(codec: VideoCodec.h264, maxWidth: 1920);
       final copied = base.copyWith(codec: VideoCodec.h265);
       expect(copied.codec, VideoCodec.h265);
       expect(copied.maxWidth, 1920);
     });
     test('ImageCompressionOptions quality range', () {
-      expect(() => ImageCompressionOptions(quality: 101).validate(), throwsArgumentError);
-      expect(() => ImageCompressionOptions(quality: -1).validate(), throwsArgumentError);
-      expect(() => ImageCompressionOptions(quality: 82).validate(), returnsNormally);
+      expect(
+        () => const ImageCompressionOptions(quality: 101).validate(),
+        throwsArgumentError,
+      );
+      expect(
+        () => const ImageCompressionOptions(quality: -1).validate(),
+        throwsArgumentError,
+      );
+      expect(
+        () => const ImageCompressionOptions(quality: 82).validate(),
+        returnsNormally,
+      );
     });
   });
 

@@ -30,8 +30,10 @@ class MediaInfo {
   final DateTime? creationTime;
   final bool? hasBFrames;
 
-  VideoStreamInfo? get primaryVideo => videoStreams.isEmpty ? null : videoStreams.first;
-  AudioStreamInfo? get primaryAudio => audioStreams.isEmpty ? null : audioStreams.first;
+  VideoStreamInfo? get primaryVideo =>
+      videoStreams.isEmpty ? null : videoStreams.first;
+  AudioStreamInfo? get primaryAudio =>
+      audioStreams.isEmpty ? null : audioStreams.first;
 
   bool get hasVideo => videoStreams.isNotEmpty;
   bool get hasAudio => audioStreams.isNotEmpty;
@@ -47,14 +49,22 @@ class MediaInfo {
         fileSizeBytes: m['fileSizeBytes'] as int? ?? 0,
         overallBitrate: m['overallBitrate'] as int? ?? 0,
         videoStreams: ((m['videoStreams'] as List?) ?? [])
-            .map((e) => VideoStreamInfo.fromMap(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) =>
+                  VideoStreamInfo.fromMap(Map<String, dynamic>.from(e as Map)),
+            )
             .toList(),
         audioStreams: ((m['audioStreams'] as List?) ?? [])
-            .map((e) => AudioStreamInfo.fromMap(Map<String, dynamic>.from(e as Map)))
+            .map(
+              (e) =>
+                  AudioStreamInfo.fromMap(Map<String, dynamic>.from(e as Map)),
+            )
             .toList(),
         metadata: Map<String, String>.from(m['metadata'] as Map? ?? {}),
         estimatedSourceBitrate: m['estimatedSourceBitrate'] as int?,
-        creationTime: m['creationTime'] != null ? DateTime.tryParse(m['creationTime'] as String) : null,
+        creationTime: m['creationTime'] != null
+            ? DateTime.tryParse(m['creationTime'] as String)
+            : null,
         hasBFrames: m['hasBFrames'] as bool?,
       );
 

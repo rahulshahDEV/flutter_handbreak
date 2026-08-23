@@ -39,10 +39,14 @@ class HardwareCapabilities {
 
   factory HardwareCapabilities.fromMap(Map<String, dynamic> map) {
     return HardwareCapabilities(
-      supportsHardwareH264Encode: map['supportsHardwareH264Encode'] as bool? ?? false,
-      supportsHardwareH265Encode: map['supportsHardwareH265Encode'] as bool? ?? false,
-      supportsHardwareAv1Encode: map['supportsHardwareAv1Encode'] as bool? ?? false,
-      supportsHardwareVp9Encode: map['supportsHardwareVp9Encode'] as bool? ?? false,
+      supportsHardwareH264Encode:
+          map['supportsHardwareH264Encode'] as bool? ?? false,
+      supportsHardwareH265Encode:
+          map['supportsHardwareH265Encode'] as bool? ?? false,
+      supportsHardwareAv1Encode:
+          map['supportsHardwareAv1Encode'] as bool? ?? false,
+      supportsHardwareVp9Encode:
+          map['supportsHardwareVp9Encode'] as bool? ?? false,
       supportsHardwareDecode: map['supportsHardwareDecode'] as bool? ?? false,
       platform: map['platform'] as String? ?? 'unknown',
       details: Map<String, dynamic>.from(map['details'] as Map? ?? {}),

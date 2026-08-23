@@ -54,7 +54,6 @@ object ImageTranscoder {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(inputPath, bounds)
         var sample = 1
-        val maxDim = maxOf(opts.maxWidth ?: srcW, opts.maxHeight ?: srcH)
         // sample down if source vastly larger than target (avoid duplicate full-size buffers)
         if (opts.maxWidth != null || opts.maxHeight != null) {
             val targetW = opts.maxWidth ?: srcW
@@ -91,10 +90,20 @@ object ImageTranscoder {
 
         if (jobManager.isCancelled(jobId)) { bitmap.recycle(); throw VideoTranscoder.CancellationException("Cancelled") }
 
-        // resolve format: auto picks best — png if alpha else jpeg (heic/avif where OS supports)
-        val resolvedFormat = when (opts.format.lowercase()) {
+        // resolve format: auto picks best — png if alpha else jpeg.
+        // Honesty (audit P1-7): a requested format we cannot encode (heic/avif)
+        // falls back to JPEG AND is reported as JPEG with an explicit warning —
+        // the result must never claim a codec that wasn't actually written.
+        var resolvedFormat = when (opts.format.lowercase()) {
             "auto" -> if (hasAlpha && opts.preserveAlpha) "png" else "jpeg"
             else -> opts.format.lowercase()
+        }
+        val warnings = mutableListOf<String>()
+        when (resolvedFormat) {
+            "heic", "heif", "avif" -> {
+                warnings.add("$resolvedFormat encoding unavailable on this device; wrote JPEG instead.")
+                resolvedFormat = "jpeg"
+            }
         }
 
         onProgress(mapOf("progress" to 0.6, "processedDurationMs" to 600, "totalDurationMs" to 1000,
@@ -109,11 +118,6 @@ object ImageTranscoder {
                 compressFormat = if (Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
                 outExt = ".webp"
             }
-            "heic", "heif" -> {
-                // Android HeifWriter path (API 28+) not via Bitmap.compress; fallback to JPEG with warning if unsupported
-                // For Phase 1 we fallback to JPEG and mark qualityWarning
-                compressFormat = Bitmap.CompressFormat.JPEG; outExt = ".jpg"
-            }
             else -> { compressFormat = Bitmap.CompressFormat.JPEG; outExt = ".jpg" }
         }
 
@@ -124,6 +128,8 @@ object ImageTranscoder {
 
         // encode — JPEG quality 0..100, PNG ignores quality (we still pass correctly)
         val qualityInt = opts.quality.coerceIn(0, 100)
+        val outW = bitmap.width
+        val outH = bitmap.height
         var wrote = false
         FileOutputStream(finalOut).use { fos ->
             wrote = bitmap.compress(compressFormat, qualityInt, fos)
@@ -152,19 +158,22 @@ object ImageTranscoder {
                 "usedHardwareAcceleration" to false,
                 "codec" to resolvedFormat,
                 "container" to resolvedFormat,
+                "qualityWarning" to if (warnings.isEmpty()) null else warnings.joinToString(" "),
                 "wasKeptOriginal" to true
             )
         }
 
-        // preserve EXIF if requested and JPEG
+        // preserve EXIF if requested and JPEG — write ACTUAL output dimensions
+        // (audit P2-4: source width/height tags were wrong after resize)
         if (opts.preserveExif && resolvedFormat == "jpeg") {
             try {
                 val srcExif = ExifInterface(inputPath)
                 val dstExif = ExifInterface(finalOut.absolutePath)
-                // copy a subset of safe tags (orientation already applied, so reset)
                 val tags = arrayOf(ExifInterface.TAG_DATETIME, ExifInterface.TAG_GPS_LATITUDE, ExifInterface.TAG_GPS_LONGITUDE,
-                    ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_IMAGE_WIDTH, ExifInterface.TAG_IMAGE_LENGTH)
+                    ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL)
                 for (t in tags) srcExif.getAttribute(t)?.let { dstExif.setAttribute(t, it) }
+                dstExif.setAttribute(ExifInterface.TAG_IMAGE_WIDTH, outW.toString())
+                dstExif.setAttribute(ExifInterface.TAG_IMAGE_LENGTH, outH.toString())
                 dstExif.setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL.toString())
                 dstExif.saveAttributes()
             } catch (_: Exception) {}
@@ -191,6 +200,7 @@ object ImageTranscoder {
             "usedHardwareAcceleration" to false,
             "codec" to resolvedFormat,
             "container" to resolvedFormat,
+            "qualityWarning" to if (warnings.isEmpty()) null else warnings.joinToString(" "),
             "wasKeptOriginal" to false
         )
     }

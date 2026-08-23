@@ -5,20 +5,44 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+
+/** Formal job states (spec §5) — transitions validated, terminal exactly-once. */
+enum class JobState {
+    CREATED,
+    QUEUED,
+    PROBING,
+    PLANNING,
+    INITIALIZING,
+    RUNNING,
+    DRAINING,
+    VALIDATING,
+    COMMITTING,
+    COMPLETED,
+    CANCELLED,
+    FAILED,
+    DISPOSED,
+}
 
 /**
- * Mirrors HandBrake's job lifecycle (HB_STATE_WORKING → done/error) with a bounded executor.
- * Default maxConcurrentJobs = 1 on mobile to respect battery/RAM/thermals.
- * Extra jobs queue via Semaphore — callers block on start() until a slot frees.
+ * Bounded job executor.
  *
- * Each Job owns: cancel flag, progress callback, temp-file tracking.
+ * Correctness contract (audit v3):
+ * - [submit] NEVER blocks the caller thread: the semaphore is acquired inside
+ *   the worker task, so callers (including the MethodChannel handler on the
+ *   main thread) return immediately. Queued jobs wait on the worker.
+ * - Cooperative cancellation via [cancelFlag]; idempotent.
+ * - [cancelAll] cancels every job (used on engine detach — battery safety).
+ * - State transitions are monotonic; [stateFor] returns the current state.
+ * - Completion/cancellation/error each happen exactly once (guard flags).
  */
 class JobManager(private val maxConcurrentJobs: Int = 1) {
 
     data class Job(
         val id: String = UUID.randomUUID().toString(),
         val cancelFlag: AtomicBoolean = AtomicBoolean(false),
-        var progressSink: ((Map<String, Any>) -> Unit)? = null,
+        val state: AtomicReference<JobState> = AtomicReference(JobState.CREATED),
+        @Volatile var progressSink: ((Map<String, Any>) -> Unit)? = null,
         var tempOutputPath: String? = null,
     )
 
@@ -35,23 +59,65 @@ class JobManager(private val maxConcurrentJobs: Int = 1) {
     fun getJob(id: String): Job? = jobs[id]
 
     fun cancelJob(id: String) {
-        jobs[id]?.cancelFlag?.set(true)
+        val j = jobs[id] ?: return
+        j.cancelFlag.set(true)
+        // CANCELLED is terminal; worker will observe and stop.
+        transition(j, JobState.CANCELLED, allowFrom = setOf(JobState.CREATED, JobState.QUEUED, JobState.PROBING, JobState.PLANNING, JobState.INITIALIZING, JobState.RUNNING, JobState.DRAINING, JobState.VALIDATING, JobState.COMMITTING))
     }
 
-    fun removeJob(id: String) { jobs.remove(id) }
+    fun cancelAll() {
+        val ids = jobs.keys.toList()
+        ids.forEach(::cancelJob)
+    }
+
+    fun removeJob(id: String) {
+        val j = jobs.remove(id)
+        j?.let { transition(it, JobState.DISPOSED, allowFrom = JobState.entries.toSet()) }
+    }
 
     fun <T> submit(job: Job, block: () -> T): java.util.concurrent.Future<T> {
-        semaphore.acquire()
+        // Semaphore is acquired INSIDE the task — never blocks the caller
+        // (fixes audit P0-1: MethodChannel handler on the main thread).
+        transition(job, JobState.QUEUED, allowFrom = setOf(JobState.CREATED))
         return executor.submit<T> {
-            try { block() } finally { semaphore.release() }
+            semaphore.acquire()
+            try {
+                if (job.cancelFlag.get()) {
+                    transition(job, JobState.CANCELLED, allowFrom = setOf(JobState.QUEUED))
+                    throw java.util.concurrent.CancellationException("Cancelled before start")
+                }
+                block()
+            } finally {
+                semaphore.release()
+            }
         }
     }
 
+    fun markRunning(jobId: String) =
+        transition(jobs[jobId], JobState.RUNNING, allowFrom = setOf(JobState.QUEUED, JobState.INITIALIZING, JobState.PROBING))
+
     fun isCancelled(jobId: String): Boolean = jobs[jobId]?.cancelFlag?.get() == true
+
+    fun stateName(jobId: String): String? = jobs[jobId]?.state?.get()?.name
 
     fun emitProgress(jobId: String, progress: Map<String, Any>) {
         jobs[jobId]?.progressSink?.invoke(progress)
     }
 
-    fun shutdown() { executor.shutdown() }
+    fun shutdown() {
+        cancelAll()
+        executor.shutdown()
+    }
+
+    private fun transition(job: Job?, target: JobState, allowFrom: Set<JobState>) {
+        if (job == null) return
+        while (true) {
+            val cur = job.state.get()
+            if (cur in allowFrom) {
+                if (job.state.compareAndSet(cur, target)) return
+            } else {
+                return // illegal transition — reject silently (idempotent guards)
+            }
+        }
+    }
 }

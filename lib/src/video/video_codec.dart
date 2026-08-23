@@ -41,8 +41,10 @@ enum AudioCodec {
 enum AudioMode {
   /// Re-encode (default).
   encode,
+
   /// Passthrough when source already matches target and container allows it.
   copy,
+
   /// Strip audio.
   remove,
 }

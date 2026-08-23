@@ -18,27 +18,49 @@ MediaInfo _info({
     'overallBitrate': 4000000,
     'videoStreams': [
       {
-        'index': 0, 'codec': videoCodec, 'codecString': videoCodec,
-        'width': w, 'height': h, 'rotation': 0,
-        'frameRate': fps, 'averageFrameRate': fps, 'isVariableFrameRate': false,
-        'durationMs': 10000, 'bitRate': 3500000, 'pixelFormat': 'yuv420p',
-        'colorPrimaries': 'bt709', 'colorTransfer': 'bt709', 'colorMatrix': 'bt709',
-        'colorRange': 'limited', 'bitDepth': 8, 'isHdr': false,
-        'displayAspectRatio': h == 0 ? 0 : w / h, 'sampleAspectRatio': 1.0,
+        'index': 0,
+        'codec': videoCodec,
+        'codecString': videoCodec,
+        'width': w,
+        'height': h,
+        'rotation': 0,
+        'frameRate': fps,
+        'averageFrameRate': fps,
+        'isVariableFrameRate': false,
+        'durationMs': 10000,
+        'bitRate': 3500000,
+        'pixelFormat': 'yuv420p',
+        'colorPrimaries': 'bt709',
+        'colorTransfer': 'bt709',
+        'colorMatrix': 'bt709',
+        'colorRange': 'limited',
+        'bitDepth': 8,
+        'isHdr': false,
+        'displayAspectRatio': h == 0 ? 0 : w / h,
+        'sampleAspectRatio': 1.0,
       }
     ],
     if (audioCodec != null)
       'audioStreams': [
         {
-          'index': 1, 'codec': audioCodec, 'codecString': audioCodec,
-          'sampleRate': 44100, 'channelCount': 2, 'bitRate': audioBitrate,
+          'index': 1,
+          'codec': audioCodec,
+          'codecString': audioCodec,
+          'sampleRate': 44100,
+          'channelCount': 2,
+          'bitRate': audioBitrate,
         }
       ],
     'metadata': {},
   });
 }
 
-HardwareCapabilities _caps(String platform, {bool h264 = true, bool h265 = true, bool av1 = false}) {
+HardwareCapabilities _caps(
+  String platform, {
+  bool h264 = true,
+  bool h265 = true,
+  bool av1 = false,
+}) {
   return HardwareCapabilities(
     supportsHardwareH264Encode: h264,
     supportsHardwareH265Encode: h265,
@@ -92,7 +114,10 @@ void main() {
     test('variable mode never limits (VFR passthrough)', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(fps: 60),
-        opts: const VideoCompressionOptions(frameRateMode: FrameRateMode.variable, maxFrameRate: 24),
+        opts: const VideoCompressionOptions(
+          frameRateMode: FrameRateMode.variable,
+          maxFrameRate: 24,
+        ),
         caps: _caps('android'),
       );
       expect(plan.limitFrameRate, isFalse);
@@ -121,7 +146,10 @@ void main() {
       // vp9 requested but default aac audio → webm not allowed → mp4
       final p1 = EncodePlanResolver.resolve(
         info: _info(),
-        opts: VideoCompressionOptions(codec: VideoCodec.vp9, container: VideoContainer.mp4),
+        opts: const VideoCompressionOptions(
+          codec: VideoCodec.vp9,
+          container: VideoContainer.mp4,
+        ),
         caps: _caps('android'),
       );
       expect(p1.containerId, 'mp4');
@@ -147,28 +175,39 @@ void main() {
   group('EncodePlanResolver — hardware policy', () {
     test('auto uses hw when available', () {
       final plan = EncodePlanResolver.resolve(
-        info: _info(), opts: const VideoCompressionOptions(), caps: _caps('android', h264: true),
+        info: _info(),
+        opts: const VideoCompressionOptions(),
+        caps: _caps('android', h264: true),
       );
       expect(plan.useHardware, isTrue);
     });
     test('auto falls back to software with note when unavailable', () {
       final plan = EncodePlanResolver.resolve(
-        info: _info(), opts: const VideoCompressionOptions(), caps: _caps('android', h264: false),
+        info: _info(),
+        opts: const VideoCompressionOptions(),
+        caps: _caps('android', h264: false),
       );
       expect(plan.useHardware, isFalse);
       expect(plan.hwFallbackNote, isNotNull);
     });
     test('hardwareOnly throws when unavailable', () {
-      expect(() => EncodePlanResolver.resolve(
-            info: _info(),
-            opts: const VideoCompressionOptions(hardwareAcceleration: HardwareAcceleration.hardwareOnly),
-            caps: _caps('android', h264: false),
-          ), throwsA(isA<HardwareEncoderUnavailableException>()));
+      expect(
+        () => EncodePlanResolver.resolve(
+          info: _info(),
+          opts: const VideoCompressionOptions(
+            hardwareAcceleration: HardwareAcceleration.hardwareOnly,
+          ),
+          caps: _caps('android', h264: false),
+        ),
+        throwsA(isA<HardwareEncoderUnavailableException>()),
+      );
     });
     test('softwareOnly forces software even when hw exists', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(hardwareAcceleration: HardwareAcceleration.softwareOnly),
+        opts: const VideoCompressionOptions(
+          hardwareAcceleration: HardwareAcceleration.softwareOnly,
+        ),
         caps: _caps('android', h264: true),
       );
       expect(plan.useHardware, isFalse);
@@ -179,35 +218,59 @@ void main() {
     test('discrete quality maps codec-aware CRF', () {
       final h264 = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(rateControl: RateControl.constantQuality(VideoQuality.medium)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          rateControl: RateControl.constantQuality(VideoQuality.medium),
+        ),
+        caps: _caps('android'),
+      );
       final av1 = EncodePlanResolver.resolve(
         info: _info(),
-        opts: VideoCompressionOptions(codec: VideoCodec.av1, rateControl: const RateControl.constantQuality(VideoQuality.medium)),
-        caps: _caps('android'));
-      expect(h264.crf, QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264));
-      expect(av1.crf, QualityMapper.crfFor(VideoQuality.medium, VideoCodec.av1));
+        opts: const VideoCompressionOptions(
+          codec: VideoCodec.av1,
+          rateControl: RateControl.constantQuality(VideoQuality.medium),
+        ),
+        caps: _caps('android'),
+      );
+      expect(
+        h264.crf,
+        QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264),
+      );
+      expect(
+        av1.crf,
+        QualityMapper.crfFor(VideoQuality.medium, VideoCodec.av1),
+      );
       expect(h264.crf, isNot(av1.crf));
     });
     test('abr clamps bitrate', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(rateControl: RateControl.averageBitrate(10)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          rateControl: RateControl.averageBitrate(10),
+        ),
+        caps: _caps('android'),
+      );
       expect(plan.rateControlMode, 'abr');
       expect(plan.bitrateKbps, 64); // clamp floor
     });
     test('advanced.crf out of range throws', () {
-      expect(() => EncodePlanResolver.resolve(
-            info: _info(),
-            opts: const VideoCompressionOptions(advanced: AdvancedEncoderOptions(crf: 99)),
-            caps: _caps('android'),
-          ), throwsArgumentError);
+      expect(
+        () => EncodePlanResolver.resolve(
+          info: _info(),
+          opts: const VideoCompressionOptions(
+            advanced: AdvancedEncoderOptions(crf: 99),
+          ),
+          caps: _caps('android'),
+        ),
+        throwsArgumentError,
+      );
     });
     test('advanced.crf overrides quality mapping', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(rateControl: RateControl.constantQuality(VideoQuality.medium), advanced: AdvancedEncoderOptions(crf: 20)),
+        opts: const VideoCompressionOptions(
+          rateControl: RateControl.constantQuality(VideoQuality.medium),
+          advanced: AdvancedEncoderOptions(crf: 20),
+        ),
         caps: _caps('android'),
       );
       expect(plan.crf, 20.0);
@@ -219,23 +282,32 @@ void main() {
     test('remove mode strips audio', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(audio: AudioOptions(mode: AudioMode.remove)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          audio: AudioOptions(mode: AudioMode.remove),
+        ),
+        caps: _caps('android'),
+      );
       expect(plan.audio.mode, 'remove');
     });
     test('aac copy passthrough on android mp4', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(audioCodec: 'aac'),
-        opts: const VideoCompressionOptions(audio: AudioOptions(mode: AudioMode.copy, codec: AudioCodec.copy)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          audio: AudioOptions(mode: AudioMode.copy, codec: AudioCodec.copy),
+        ),
+        caps: _caps('android'),
+      );
       expect(plan.audio.mode, 'passthrough');
       expect(plan.audio.codecId, 'aac');
     });
     test('opus copy into mp4 falls back to transcode+aac with note', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(audioCodec: 'opus'),
-        opts: const VideoCompressionOptions(audio: AudioOptions(mode: AudioMode.copy, codec: AudioCodec.copy)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          audio: AudioOptions(mode: AudioMode.copy, codec: AudioCodec.copy),
+        ),
+        caps: _caps('android'),
+      );
       expect(plan.audio.mode, 'transcode');
       expect(plan.audio.codecId, 'aac');
       expect(plan.audio.note, isNotNull);
@@ -243,8 +315,11 @@ void main() {
     test('explicit opus encode on android mp4 → aac note', () {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
-        opts: const VideoCompressionOptions(audio: AudioOptions(codec: AudioCodec.opus)),
-        caps: _caps('android'));
+        opts: const VideoCompressionOptions(
+          audio: AudioOptions(codec: AudioCodec.opus),
+        ),
+        caps: _caps('android'),
+      );
       expect(plan.audio.codecId, 'aac');
       expect(plan.audio.note, contains('AAC'));
     });
@@ -258,7 +333,10 @@ void main() {
         const CropFilter(top: 2),
         const GrayscaleFilter(),
       ]);
-      expect(ordered.map((f) => f['type']).toList(), ['crop', 'scale', 'denoise', 'grayscale']);
+      expect(
+        ordered.map((f) => f['type']).toList(),
+        ['crop', 'scale', 'denoise', 'grayscale'],
+      );
     });
     test('later duplicate of same stage wins', () {
       final ordered = canonicalizeFilters([
@@ -275,7 +353,8 @@ void main() {
       final plan = EncodePlanResolver.resolve(
         info: _info(),
         opts: const VideoCompressionOptions(maxWidth: 1280, maxFrameRate: 30),
-        caps: _caps('android'));
+        caps: _caps('android'),
+      );
       final rt = ResolvedPlan.fromMap(plan.toMap());
       expect(rt.width, plan.width);
       expect(rt.height, plan.height);

@@ -31,7 +31,8 @@ class VideoStreamInfo {
   final String codecString;
   final int width;
   final int height;
-  final int rotation; // 0/90/180/270 — rotation-corrected dimensions already applied to width/height
+  final int
+      rotation; // 0/90/180/270 — rotation-corrected dimensions already applied to width/height
   final double frameRate;
   final double averageFrameRate;
   final bool isVariableFrameRate;
@@ -57,12 +58,15 @@ class VideoStreamInfo {
   factory VideoStreamInfo.fromMap(Map<String, dynamic> m) => VideoStreamInfo(
         index: m['index'] as int? ?? 0,
         codec: m['codec'] as String? ?? 'unknown',
-        codecString: m['codecString'] as String? ?? m['codec'] as String? ?? 'unknown',
+        codecString:
+            m['codecString'] as String? ?? m['codec'] as String? ?? 'unknown',
         width: m['width'] as int? ?? 0,
         height: m['height'] as int? ?? 0,
         rotation: m['rotation'] as int? ?? 0,
         frameRate: (m['frameRate'] as num?)?.toDouble() ?? 0,
-        averageFrameRate: (m['averageFrameRate'] as num?)?.toDouble() ?? (m['frameRate'] as num?)?.toDouble() ?? 0,
+        averageFrameRate: (m['averageFrameRate'] as num?)?.toDouble() ??
+            (m['frameRate'] as num?)?.toDouble() ??
+            0,
         isVariableFrameRate: m['isVariableFrameRate'] as bool? ?? false,
         durationMs: m['durationMs'] as int? ?? 0,
         bitRate: m['bitRate'] as int? ?? 0,
@@ -74,7 +78,12 @@ class VideoStreamInfo {
         bitDepth: m['bitDepth'] as int? ?? 8,
         isHdr: m['isHdr'] as bool? ?? false,
         hdrType: m['hdrType'] as String?,
-        displayAspectRatio: (m['displayAspectRatio'] as num?)?.toDouble() ?? (m['width'] != null && m['height'] != null && (m['height'] as int) != 0 ? (m['width'] as int) / (m['height'] as int) : 0),
+        displayAspectRatio: (m['displayAspectRatio'] as num?)?.toDouble() ??
+            (m['width'] != null &&
+                    m['height'] != null &&
+                    (m['height'] as int) != 0
+                ? (m['width'] as int) / (m['height'] as int)
+                : 0),
         sampleAspectRatio: (m['sampleAspectRatio'] as num?)?.toDouble() ?? 1.0,
         profile: m['profile'] as String?,
         level: m['level'] as String?,
@@ -82,15 +91,29 @@ class VideoStreamInfo {
       );
 
   Map<String, dynamic> toMap() => {
-        'index': index, 'codec': codec, 'codecString': codecString,
-        'width': width, 'height': height, 'rotation': rotation,
-        'frameRate': frameRate, 'averageFrameRate': averageFrameRate,
-        'isVariableFrameRate': isVariableFrameRate, 'durationMs': durationMs,
-        'bitRate': bitRate, 'pixelFormat': pixelFormat,
-        'colorPrimaries': colorPrimaries, 'colorTransfer': colorTransfer,
-        'colorMatrix': colorMatrix, 'colorRange': colorRange,
-        'bitDepth': bitDepth, 'isHdr': isHdr, 'hdrType': hdrType,
-        'displayAspectRatio': displayAspectRatio, 'sampleAspectRatio': sampleAspectRatio,
-        'profile': profile, 'level': level, 'language': language,
+        'index': index,
+        'codec': codec,
+        'codecString': codecString,
+        'width': width,
+        'height': height,
+        'rotation': rotation,
+        'frameRate': frameRate,
+        'averageFrameRate': averageFrameRate,
+        'isVariableFrameRate': isVariableFrameRate,
+        'durationMs': durationMs,
+        'bitRate': bitRate,
+        'pixelFormat': pixelFormat,
+        'colorPrimaries': colorPrimaries,
+        'colorTransfer': colorTransfer,
+        'colorMatrix': colorMatrix,
+        'colorRange': colorRange,
+        'bitDepth': bitDepth,
+        'isHdr': isHdr,
+        'hdrType': hdrType,
+        'displayAspectRatio': displayAspectRatio,
+        'sampleAspectRatio': sampleAspectRatio,
+        'profile': profile,
+        'level': level,
+        'language': language,
       };
 }

@@ -25,9 +25,15 @@ class ImageCompressionOptions {
   final bool overwriteExisting;
 
   void validate() {
-    if (quality < 0 || quality > 100) throw ArgumentError('quality must be 0..100');
-    if (maxWidth != null && maxWidth! <= 0) throw ArgumentError('maxWidth must be > 0');
-    if (maxHeight != null && maxHeight! <= 0) throw ArgumentError('maxHeight must be > 0');
+    if (quality < 0 || quality > 100) {
+      throw ArgumentError('quality must be 0..100');
+    }
+    if (maxWidth != null && maxWidth! <= 0) {
+      throw ArgumentError('maxWidth must be > 0');
+    }
+    if (maxHeight != null && maxHeight! <= 0) {
+      throw ArgumentError('maxHeight must be > 0');
+    }
   }
 
   Map<String, dynamic> toMap() => {

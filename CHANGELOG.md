@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 — 2026-08-23 (audit v3: crash & concurrency hardening)
+
+- Android: semaphore no longer acquired on the main thread (ANR fix) — queued jobs wait on the worker.
+- Android: probe + capabilities moved off the platform thread; engine detach now cancels running jobs.
+- Android: audio transcode never drops decoded PCM (retry-until-fed, cancellation-aware).
+- Android: negative/non-monotonic PTS normalized before mux (MediaMuxer rejection fix).
+- Android: half-created decoder released on configure failure (no leak).
+- Android: job-scoped temp files (`output.hbtmp.<jobId>`) — no cross-job collision.
+- Android/iOS: requested HEIC/AVIF that a device cannot encode now falls back to JPEG **and reports it** (`qualityWarning`) instead of silently lying about the codec.
+- iOS: image decode no longer loads the entire file into memory (URL-based ImageIO source).
+- iOS: job task access synchronized (TSAN race fixed); duration validation parity with Android.
+- iOS: capabilities probe moved off the main thread.
+- Formal job state machine on both natives; state surfaced in progress payloads.
+- Dart: probe + capabilities resolved in parallel.
+
 ## 0.3.0 — 2026-08-23
 
 - Rename package to `flutter_handbreak` (keep `handbreak.dart` alias for compatibility)
@@ -11,7 +26,7 @@
 
 ## 0.2.0 — 2026-08-22 (production hardening)
 
-Full audit: [PRODUCTION_REVIEW.md](PRODUCTION_REVIEW.md).
+Full audit of v0.2 hardening (internal, not shipped).
 
 ### Architecture
 - **EncodePlanResolver**: all encode policy (dimensions, fps gate, container fallback,

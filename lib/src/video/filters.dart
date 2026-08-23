@@ -10,39 +10,73 @@ sealed class VideoFilter {
 }
 
 class CropFilter extends VideoFilter {
-  const CropFilter({this.top = 0, this.bottom = 0, this.left = 0, this.right = 0});
+  const CropFilter({
+    this.top = 0,
+    this.bottom = 0,
+    this.left = 0,
+    this.right = 0,
+  });
   final int top, bottom, left, right;
   @override
-  Map<String, dynamic> toMap() => {'type': 'crop', 'top': top, 'bottom': bottom, 'left': left, 'right': right};
+  Map<String, dynamic> toMap() => {
+        'type': 'crop',
+        'top': top,
+        'bottom': bottom,
+        'left': left,
+        'right': right,
+      };
 }
 
 class ScaleFilter extends VideoFilter {
-  const ScaleFilter({this.width, this.height, this.algorithm = ScaleAlgorithm.lanczos});
+  const ScaleFilter({
+    this.width,
+    this.height,
+    this.algorithm = ScaleAlgorithm.lanczos,
+  });
   final int? width;
   final int? height;
   final ScaleAlgorithm algorithm;
   @override
-  Map<String, dynamic> toMap() => {'type': 'scale', 'width': width, 'height': height, 'algorithm': algorithm.name};
+  Map<String, dynamic> toMap() => {
+        'type': 'scale',
+        'width': width,
+        'height': height,
+        'algorithm': algorithm.name,
+      };
 }
 
 enum ScaleAlgorithm { fastBilinear, bilinear, bicubic, lanczos }
 
 class PadFilter extends VideoFilter {
-  const PadFilter({required this.width, required this.height, this.color = 0x000000});
+  const PadFilter({
+    required this.width,
+    required this.height,
+    this.color = 0x000000,
+  });
   final int width;
   final int height;
   final int color;
   @override
-  Map<String, dynamic> toMap() => {'type': 'pad', 'width': width, 'height': height, 'color': color};
+  Map<String, dynamic> toMap() =>
+      {'type': 'pad', 'width': width, 'height': height, 'color': color};
 }
 
 class RotateFilter extends VideoFilter {
-  const RotateFilter(this.degrees, {this.flipHorizontal = false, this.flipVertical = false});
+  const RotateFilter(
+    this.degrees, {
+    this.flipHorizontal = false,
+    this.flipVertical = false,
+  });
   final int degrees; // 0/90/180/270
   final bool flipHorizontal;
   final bool flipVertical;
   @override
-  Map<String, dynamic> toMap() => {'type': 'rotate', 'degrees': degrees, 'flipH': flipHorizontal, 'flipV': flipVertical};
+  Map<String, dynamic> toMap() => {
+        'type': 'rotate',
+        'degrees': degrees,
+        'flipH': flipHorizontal,
+        'flipV': flipVertical,
+      };
 }
 
 class DeinterlaceFilter extends VideoFilter {
@@ -55,11 +89,15 @@ class DeinterlaceFilter extends VideoFilter {
 enum DeinterlaceMode { off, decomb, bob, yadif }
 
 class DenoiseFilter extends VideoFilter {
-  const DenoiseFilter({this.strength = DenoiseStrength.light, this.tune = 'none'});
+  const DenoiseFilter({
+    this.strength = DenoiseStrength.light,
+    this.tune = 'none',
+  });
   final DenoiseStrength strength;
   final String tune; // none | film | animation | grain
   @override
-  Map<String, dynamic> toMap() => {'type': 'denoise', 'strength': strength.name, 'tune': tune};
+  Map<String, dynamic> toMap() =>
+      {'type': 'denoise', 'strength': strength.name, 'tune': tune};
 }
 
 enum DenoiseStrength { off, light, medium, strong, custom }
@@ -68,7 +106,8 @@ class SharpenFilter extends VideoFilter {
   const SharpenFilter({this.strength = SharpenStrength.medium});
   final SharpenStrength strength;
   @override
-  Map<String, dynamic> toMap() => {'type': 'sharpen', 'strength': strength.name};
+  Map<String, dynamic> toMap() =>
+      {'type': 'sharpen', 'strength': strength.name};
 }
 
 enum SharpenStrength { off, light, medium, strong }

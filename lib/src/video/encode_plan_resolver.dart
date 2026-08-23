@@ -33,7 +33,8 @@ class ResolvedAudioPlan {
         if (note != null) 'note': note,
       };
 
-  factory ResolvedAudioPlan.fromMap(Map<String, dynamic> m) => ResolvedAudioPlan(
+  factory ResolvedAudioPlan.fromMap(Map<String, dynamic> m) =>
+      ResolvedAudioPlan(
         mode: m['mode'] as String? ?? 'transcode',
         codecId: m['codec'] as String? ?? 'aac',
         bitrateKbps: m['bitrateKbps'] as int? ?? 128,
@@ -97,7 +98,8 @@ class ResolvedPlan {
         'targetFps': targetFps,
         'limitFrameRate': limitFrameRate,
         'container': containerId,
-        if (containerFallbackNote != null) 'containerFallbackNote': containerFallbackNote,
+        if (containerFallbackNote != null)
+          'containerFallbackNote': containerFallbackNote,
         'useHardware': useHardware,
         if (hwFallbackNote != null) 'hwFallbackNote': hwFallbackNote,
         'rateControlMode': rateControlMode,
@@ -120,9 +122,12 @@ class ResolvedPlan {
         rateControlMode: m['rateControlMode'] as String? ?? 'cq',
         crf: (m['crf'] as num?)?.toDouble(),
         bitrateKbps: m['bitrateKbps'] as int?,
-        audio: ResolvedAudioPlan.fromMap(Map<String, dynamic>.from(m['audio'] as Map? ?? {})),
-        orderedFilters:
-            ((m['filters'] as List?) ?? []).map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+        audio: ResolvedAudioPlan.fromMap(
+          Map<String, dynamic>.from(m['audio'] as Map? ?? {}),
+        ),
+        orderedFilters: ((m['filters'] as List?) ?? [])
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
       );
 }
 
@@ -144,7 +149,11 @@ class ContainerSupport {
   }
 
   /// Codec-level compatibility beyond container presence.
-  static bool codecFits(String container, String videoCodecId, {String? audioCodecId}) {
+  static bool codecFits(
+    String container,
+    String videoCodecId, {
+    String? audioCodecId,
+  }) {
     switch (container) {
       case 'mp4':
       case 'mov':
@@ -179,7 +188,8 @@ List<Map<String, dynamic>> canonicalizeFilters(List<VideoFilter> filters) {
   final byType = <String, Map<String, dynamic>>{};
   for (final f in filters) {
     final m = f.toMap();
-    byType[m['type'] as String] = m; // later entries win per stage (like HB disabling dupes)
+    byType[m['type'] as String] =
+        m; // later entries win per stage (like HB disabling dupes)
   }
   return [
     for (final t in kCanonicalFilterOrder)
@@ -189,6 +199,7 @@ List<Map<String, dynamic>> canonicalizeFilters(List<VideoFilter> filters) {
 
 /// Audio codecs that can be bit-copied into MP4-family containers on Android.
 const Set<String> kAndroidMp4CopyableAudio = {'aac', 'mp3', 'ac3', 'eac3'};
+
 /// iOS ExportSession re-encodes regardless; treat copy conservatively.
 const Set<String> kIosCopyableAudio = {'aac'};
 
@@ -209,7 +220,9 @@ class EncodePlanResolver {
     final srcW = v?.width ?? 0;
     final srcH = v?.height ?? 0;
     if (srcW <= 0 || srcH <= 0) {
-      throw UnsupportedFormatException('No decodable video stream in ${info.path}');
+      throw UnsupportedFormatException(
+        'No decodable video stream in ${info.path}',
+      );
     }
 
     // ---- dimensions -------------------------------------------------------
@@ -237,8 +250,9 @@ class EncodePlanResolver {
             ? opts.maxFrameRate!
             : srcFps;
       case FrameRateMode.sameAsSource:
-        targetFps =
-            opts.maxFrameRate != null && opts.maxFrameRate! < srcFps ? opts.maxFrameRate! : srcFps;
+        targetFps = opts.maxFrameRate != null && opts.maxFrameRate! < srcFps
+            ? opts.maxFrameRate!
+            : srcFps;
     }
     final limitFrameRate = targetFps < srcFps - 0.01;
 
@@ -248,7 +262,11 @@ class EncodePlanResolver {
     String? containerNote;
     bool fits(String c) =>
         ContainerSupport.platformSupports(caps.platform, c) &&
-        ContainerSupport.codecFits(c, opts.codec.id, audioCodecId: _effectiveAudioForContainer(opts.audio.codec.id));
+        ContainerSupport.codecFits(
+          c,
+          opts.codec.id,
+          audioCodecId: _effectiveAudioForContainer(opts.audio.codec.id),
+        );
     if (!fits(effectiveContainer)) {
       for (final fb in const ['mp4', 'mov']) {
         if (fb != effectiveContainer && fits(fb)) {
@@ -260,7 +278,8 @@ class EncodePlanResolver {
       }
       if (!fits(effectiveContainer)) {
         throw UnsupportedFormatException(
-            'No supported container on ${caps.platform} for ${opts.codec.id}');
+          'No supported container on ${caps.platform} for ${opts.codec.id}',
+        );
       }
     }
 
@@ -268,7 +287,8 @@ class EncodePlanResolver {
     final audio = _resolveAudio(info, opts, effectiveContainer, caps.platform);
 
     // ---- hardware decision ------------------------------------------------
-    final hwRequested = opts.hardwareAcceleration != HardwareAcceleration.softwareOnly;
+    final hwRequested =
+        opts.hardwareAcceleration != HardwareAcceleration.softwareOnly;
     final hwAvailable = caps.supportsEncodeFor(opts.codec.id);
     bool useHardware;
     String? hwNote;
@@ -278,14 +298,16 @@ class EncodePlanResolver {
       case HardwareAcceleration.hardwareOnly:
         if (!hwAvailable) {
           throw HardwareEncoderUnavailableException(
-              'hardwareOnly requested but no hardware encoder for ${opts.codec.id} on ${caps.platform}');
+            'hardwareOnly requested but no hardware encoder for ${opts.codec.id} on ${caps.platform}',
+          );
         }
         useHardware = true;
       case HardwareAcceleration.auto:
       case HardwareAcceleration.hardwarePreferred:
         useHardware = hwAvailable;
         if (!hwAvailable && hwRequested) {
-          hwNote = 'Hardware ${opts.codec.id} encoder unavailable on this device; using software.';
+          hwNote =
+              'Hardware ${opts.codec.id} encoder unavailable on this device; using software.';
         }
     }
 
@@ -301,7 +323,8 @@ class EncodePlanResolver {
       case ConstantQualityValueRateControl():
         if (!QualityMapper.isValidCrf(effRc.value, opts.codec)) {
           throw ArgumentError(
-              'CRF ${effRc.value} outside valid range ${QualityMapper.validRangeFor(opts.codec)} for ${opts.codec.id}');
+            'CRF ${effRc.value} outside valid range ${QualityMapper.validRangeFor(opts.codec)} for ${opts.codec.id}',
+          );
         }
         rcMode = 'cq_value';
         crf = effRc.value;
@@ -313,7 +336,8 @@ class EncodePlanResolver {
     if (advCrf != null) {
       if (!QualityMapper.isValidCrf(advCrf, opts.codec)) {
         throw ArgumentError(
-            'advanced.crf $advCrf outside valid range for ${opts.codec.id}');
+          'advanced.crf $advCrf outside valid range for ${opts.codec.id}',
+        );
       }
       rcMode = 'cq_value';
       crf = advCrf;
@@ -391,7 +415,8 @@ class EncodePlanResolver {
     h = _align(h);
     w = w.clamp(2, 7680);
     h = h.clamp(2, 7680);
-    final explicit = targetWidth != null || targetHeight != null || scale != null;
+    final explicit =
+        targetWidth != null || targetHeight != null || scale != null;
     if (!explicit && (w > srcWidth || h > srcHeight)) {
       w = _align(srcWidth);
       h = _align(srcHeight);
@@ -413,7 +438,11 @@ class EncodePlanResolver {
   ) {
     final userAudio = opts.audio;
     if (userAudio.mode == AudioMode.remove) {
-      return ResolvedAudioPlan(mode: 'remove', codecId: 'none', bitrateKbps: 0);
+      return const ResolvedAudioPlan(
+        mode: 'remove',
+        codecId: 'none',
+        bitrateKbps: 0,
+      );
     }
 
     final srcAudio = info.primaryAudio;
@@ -422,23 +451,33 @@ class EncodePlanResolver {
     // copy requested (or archive preset default): passthrough when safe
     if (userAudio.mode == AudioMode.copy ||
         (userAudio.codec == AudioCodec.copy && srcCodec != null)) {
-      final requested = userAudio.codec == AudioCodec.copy ? srcCodec! : userAudio.codec.id;
-      final copyable = platform == 'ios' ? kIosCopyableAudio : kAndroidMp4CopyableAudio;
-      final containerAllows = effectiveContainer == 'mp4' || effectiveContainer == 'mov';
+      final requested =
+          userAudio.codec == AudioCodec.copy ? srcCodec! : userAudio.codec.id;
+      final copyable =
+          platform == 'ios' ? kIosCopyableAudio : kAndroidMp4CopyableAudio;
+      final containerAllows =
+          effectiveContainer == 'mp4' || effectiveContainer == 'mov';
       if (containerAllows && copyable.contains(requested) && srcAudio != null) {
         return ResolvedAudioPlan(
           mode: 'passthrough',
           codecId: requested,
-          bitrateKbps: srcAudio.bitRate > 0 ? (srcAudio.bitRate / 1000).round() : userAudio.bitrateKbps,
+          bitrateKbps: srcAudio.bitRate > 0
+              ? (srcAudio.bitRate / 1000).round()
+              : userAudio.bitrateKbps,
         );
       }
       // fall through to transcode with note when unsafe
-      final note = requested == 'opus' && platform == 'android' && effectiveContainer == 'mp4'
+      final note = requested == 'opus' &&
+              platform == 'android' &&
+              effectiveContainer == 'mp4'
           ? 'Opus copy into MP4 is unreliable on Android MediaMuxer; transcoding to AAC.'
-          : (srcAudio == null ? null : 'Source audio ($requested) cannot be safely copied; transcoding.');
-      final target = userAudio.codec == AudioCodec.opus && effectiveContainer == 'webm'
-          ? 'opus'
-          : 'aac';
+          : (srcAudio == null
+              ? null
+              : 'Source audio ($requested) cannot be safely copied; transcoding.');
+      final target =
+          userAudio.codec == AudioCodec.opus && effectiveContainer == 'webm'
+              ? 'opus'
+              : 'aac';
       return ResolvedAudioPlan(
         mode: 'transcode',
         codecId: target,
@@ -474,7 +513,11 @@ class EncodePlanResolver {
 /// Small helper so callers without full MediaInfo can still resolve image jobs consistently.
 class ImagePlanTokens {
   const ImagePlanTokens._();
-  static String resolveFormat(String requested, {required bool hasAlpha, required String platform}) {
+  static String resolveFormat(
+    String requested, {
+    required bool hasAlpha,
+    required String platform,
+  }) {
     if (requested != 'auto') return requested;
     if (!hasAlpha) return 'jpeg';
     // PNG universally safe for alpha; HEIC only when iOS.

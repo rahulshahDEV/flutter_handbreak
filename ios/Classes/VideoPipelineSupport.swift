@@ -45,6 +45,7 @@ extension VideoPipeline {
                 "totalFrames": estFrames,
                 "currentFps": Double(targetFps) * p,
                 "stage": "encode",
+                "state": job.state.rawValue,
             ])
         }
         timer.resume()
@@ -53,7 +54,7 @@ extension VideoPipeline {
 
     static func finish(job: Job, manager: JobManager, inputPath: String, outputPath: String,
                        tmpPath: String, startMs: Int, usedHw: Bool, codecId: String, container: String,
-                       keepSmaller: Bool, notes: inout [String]) {
+                       sourceDurationMs: Int, keepSmaller: Bool, notes: inout [String]) {
         let fm = FileManager.default
         guard fm.fileExists(atPath: tmpPath),
               let attrs = try? fm.attributesOfItem(atPath: tmpPath),
@@ -75,6 +76,20 @@ extension VideoPipeline {
             r["qualityWarning"] = notes.isEmpty ? NSNull() : notes.joined(separator: " ")
             manager.complete(job: job, result: r)
             return
+        }
+
+        // Audit P1-11: validate the temp output BEFORE committing it (parity with
+        // Android). Duration must be within tolerance of the source duration.
+        if sourceDurationMs > 500,
+           let probeTmp = try? MediaProbe.probe(path: tmpPath),
+           let outDur = probeTmp["durationMs"] as? Int {
+            let tolerance = max(1500, sourceDurationMs / 4)
+            if abs(outDur - sourceDurationMs) > tolerance {
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: "ENCODING_ERROR",
+                             message: "Duration mismatch: expected ~\(sourceDurationMs)ms got \(outDur)ms")
+                return
+            }
         }
 
         try? fm.removeItem(atPath: outputPath)

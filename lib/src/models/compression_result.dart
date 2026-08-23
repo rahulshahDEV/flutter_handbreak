@@ -23,8 +23,10 @@ class CompressionResult {
   final int originalSizeBytes;
   final int outputSizeBytes;
   final int savedBytes;
+
   /// original / output (e.g. 3.2 = ~69% saved).
   final double compressionRatio;
+
   /// 0..100 percentage saved.
   final double compressionPercentage;
   final int durationMs; // wall-clock encode time
@@ -39,23 +41,27 @@ class CompressionResult {
   /// Set when recompressing already-heavily-compressed material likely degrades quality.
   final String? qualityWarning;
 
-  /// True when [keepOriginalIfSmaller] kept the original because output would be larger.
+  /// True when the "keep original if smaller" policy kept the original because
+  /// the compressed output would have been larger than the source.
   final bool wasKeptOriginal;
 
   bool get didSaveSpace => savedBytes > 0;
 
   Duration get duration => Duration(milliseconds: durationMs);
 
-  factory CompressionResult.fromMap(Map<String, dynamic> m) => CompressionResult(
+  factory CompressionResult.fromMap(Map<String, dynamic> m) =>
+      CompressionResult(
         inputPath: m['inputPath'] as String? ?? '',
         outputPath: m['outputPath'] as String? ?? '',
         originalSizeBytes: m['originalSizeBytes'] as int? ?? 0,
         outputSizeBytes: m['outputSizeBytes'] as int? ?? 0,
         savedBytes: m['savedBytes'] as int? ?? 0,
         compressionRatio: (m['compressionRatio'] as num?)?.toDouble() ?? 1.0,
-        compressionPercentage: (m['compressionPercentage'] as num?)?.toDouble() ?? 0,
+        compressionPercentage:
+            (m['compressionPercentage'] as num?)?.toDouble() ?? 0,
         durationMs: m['durationMs'] as int? ?? 0,
-        usedHardwareAcceleration: m['usedHardwareAcceleration'] as bool? ?? false,
+        usedHardwareAcceleration:
+            m['usedHardwareAcceleration'] as bool? ?? false,
         codec: m['codec'] as String? ?? 'h264',
         container: m['container'] as String? ?? 'mp4',
         outputMediaInfo: m['outputMediaInfo'] as Map<String, dynamic>?,

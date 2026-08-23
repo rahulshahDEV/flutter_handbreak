@@ -49,7 +49,8 @@ class _DemoHomeState extends State<DemoHome> {
       final info = await HandbreakProbe.probe(path);
       setState(() {
         mediaInfo = info;
-        status = 'Ready — ${info.videoStreams.length} video / ${info.audioStreams.length} audio, ${info.durationMs}ms, ${info.fileSizeBytes} bytes';
+        status =
+            'Ready — ${info.videoStreams.length} video / ${info.audioStreams.length} audio, ${info.durationMs}ms, ${info.fileSizeBytes} bytes';
       });
     } catch (e) {
       setState(() => status = 'Probe failed: $e');
@@ -76,21 +77,35 @@ class _DemoHomeState extends State<DemoHome> {
       lastResult = null;
     });
     try {
-      final job = await VideoCompressor.start(inputPath!, options: resolved, outputPath: out);
+      final job = await VideoCompressor.start(
+        inputPath!,
+        options: resolved,
+        outputPath: out,
+      );
       setState(() => activeJob = job);
-      job.progress.listen((p) {
-        setState(() => progress = p);
-      }, onError: (e) => setState(() => status = 'Progress error: $e'));
+      job.progress.listen(
+        (p) {
+          setState(() => progress = p);
+        },
+        onError: (e) => setState(() => status = 'Progress error: $e'),
+      );
       final result = await job.result;
       setState(() {
         lastResult = result;
-        status = 'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved, hw=${result.usedHardwareAcceleration}';
+        status =
+            'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved, hw=${result.usedHardwareAcceleration}';
         activeJob = null;
       });
     } on CancelledCompressionException {
-      setState(() { status = 'Cancelled'; activeJob = null; });
+      setState(() {
+        status = 'Cancelled';
+        activeJob = null;
+      });
     } catch (e) {
-      setState(() { status = 'Failed: $e'; activeJob = null; });
+      setState(() {
+        status = 'Failed: $e';
+        activeJob = null;
+      });
     }
   }
 
@@ -99,19 +114,30 @@ class _DemoHomeState extends State<DemoHome> {
     final out = await _outputPath(inputPath!, '.jpg');
     setState(() => status = 'Compressing image ...');
     try {
-      final job = await ImageCompressor.start(inputPath!,
-          options: const ImageCompressionOptions(quality: 82, maxWidth: 2048, maxHeight: 2048, format: ImageFormat.auto),
-          outputPath: out);
+      final job = await ImageCompressor.start(
+        inputPath!,
+        options: const ImageCompressionOptions(
+          quality: 82,
+          maxWidth: 2048,
+          maxHeight: 2048,
+          format: ImageFormat.auto,
+        ),
+        outputPath: out,
+      );
       setState(() => activeJob = job);
       job.progress.listen((p) => setState(() => progress = p));
       final result = await job.result;
       setState(() {
         // ImageCompressor returns CompressionResult as well
-        status = 'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved';
+        status =
+            'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved';
         activeJob = null;
       });
     } catch (e) {
-      setState(() { status = 'Image failed: $e'; activeJob = null; });
+      setState(() {
+        status = 'Image failed: $e';
+        activeJob = null;
+      });
     }
   }
 
@@ -127,54 +153,136 @@ class _DemoHomeState extends State<DemoHome> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          FilledButton.icon(onPressed: pickFile, icon: const Icon(Icons.file_open), label: const Text('Pick Video / Image')),
-          const SizedBox(height: 12),
-          if (inputPath != null) Text('Input: $inputPath', style: const TextStyle(fontSize: 12)),
-          if (isProbeLoading) const LinearProgressIndicator(),
-          if (mediaInfo != null) Card(
-            child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Container: ${mediaInfo!.container}  Duration: ${mediaInfo!.durationMs}ms  Size: ${mediaInfo!.fileSizeBytes}'),
-              if (mediaInfo!.primaryVideo != null) Text('Video: ${mediaInfo!.primaryVideo!.width}x${mediaInfo!.primaryVideo!.height} ${mediaInfo!.primaryVideo!.codec} ${mediaInfo!.primaryVideo!.frameRate.toStringAsFixed(1)}fps rot=${mediaInfo!.primaryVideo!.rotation} hdr=${mediaInfo!.primaryVideo!.isHdr}'),
-              if (mediaInfo!.primaryAudio != null) Text('Audio: ${mediaInfo!.primaryAudio!.codec} ${mediaInfo!.primaryAudio!.sampleRate}Hz ${mediaInfo!.primaryAudio!.channelCount}ch'),
-              Text('Streams: ${mediaInfo!.videoStreams.length}v / ${mediaInfo!.audioStreams.length}a  Bitrate: ${mediaInfo!.overallBitrate}'),
-            ])),
+          FilledButton.icon(
+            onPressed: pickFile,
+            icon: const Icon(Icons.file_open),
+            label: const Text('Pick Video / Image'),
           ),
+          const SizedBox(height: 12),
+          if (inputPath != null)
+            Text('Input: $inputPath', style: const TextStyle(fontSize: 12)),
+          if (isProbeLoading) const LinearProgressIndicator(),
+          if (mediaInfo != null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Container: ${mediaInfo!.container}  Duration: ${mediaInfo!.durationMs}ms  Size: ${mediaInfo!.fileSizeBytes}',
+                    ),
+                    if (mediaInfo!.primaryVideo != null)
+                      Text(
+                        'Video: ${mediaInfo!.primaryVideo!.width}x${mediaInfo!.primaryVideo!.height} ${mediaInfo!.primaryVideo!.codec} ${mediaInfo!.primaryVideo!.frameRate.toStringAsFixed(1)}fps rot=${mediaInfo!.primaryVideo!.rotation} hdr=${mediaInfo!.primaryVideo!.isHdr}',
+                      ),
+                    if (mediaInfo!.primaryAudio != null)
+                      Text(
+                        'Audio: ${mediaInfo!.primaryAudio!.codec} ${mediaInfo!.primaryAudio!.sampleRate}Hz ${mediaInfo!.primaryAudio!.channelCount}ch',
+                      ),
+                    Text(
+                      'Streams: ${mediaInfo!.videoStreams.length}v / ${mediaInfo!.audioStreams.length}a  Bitrate: ${mediaInfo!.overallBitrate}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           Text('Preset', style: Theme.of(context).textTheme.titleSmall),
           DropdownButton<VideoPresetId>(
             value: selectedPreset,
             isExpanded: true,
-            items: VideoPresetId.values.map((p) => DropdownMenuItem(value: p, child: Text(p.displayName))).toList(),
+            items: VideoPresetId.values
+                .map(
+                  (p) => DropdownMenuItem(value: p, child: Text(p.displayName)),
+                )
+                .toList(),
             onChanged: (v) => setState(() => selectedPreset = v!),
           ),
-          Text(selectedPreset.description, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+          Text(
+            selectedPreset.description,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
           const SizedBox(height: 12),
-          Wrap(spacing: 8, children: [
-            FilledButton(onPressed: inputPath == null || activeJob != null ? null : compressVideo, child: const Text('Compress Video')),
-            OutlinedButton(onPressed: inputPath == null || activeJob != null ? null : compressImage, child: const Text('Compress Image')),
-            if (activeJob != null) FilledButton.tonalIcon(onPressed: cancel, icon: const Icon(Icons.cancel), label: const Text('Cancel')),
-          ]),
+          Wrap(
+            spacing: 8,
+            children: [
+              FilledButton(
+                onPressed: inputPath == null || activeJob != null
+                    ? null
+                    : compressVideo,
+                child: const Text('Compress Video'),
+              ),
+              OutlinedButton(
+                onPressed: inputPath == null || activeJob != null
+                    ? null
+                    : compressImage,
+                child: const Text('Compress Image'),
+              ),
+              if (activeJob != null)
+                FilledButton.tonalIcon(
+                  onPressed: cancel,
+                  icon: const Icon(Icons.cancel),
+                  label: const Text('Cancel'),
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           Text(status),
-          if (progress != null) Column(children: [
-            const SizedBox(height: 8),
-            LinearProgressIndicator(value: progress!.progress),
-            Text('${(progress!.progress * 100).toStringAsFixed(1)}%  ${progress!.encodedFrames}/${progress!.totalFrames}  ${progress!.currentFps.toStringAsFixed(1)} fps  stage:${progress!.stage}'),
-            if (progress!.estimatedRemaining != null) Text('ETA: ${progress!.estimatedRemaining}'),
-          ]),
-          if (lastResult != null) Card(
-            color: Colors.green.shade50,
-            child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Output: ${lastResult!.outputPath}', style: const TextStyle(fontSize: 12)),
-              Text('Size: ${lastResult!.originalSizeBytes} → ${lastResult!.outputSizeBytes}  Saved: ${lastResult!.savedBytes} (${lastResult!.compressionPercentage.toStringAsFixed(1)}%)'),
-              Text('Ratio: ${lastResult!.compressionRatio.toStringAsFixed(2)}x  Codec: ${lastResult!.codec}/${lastResult!.container}  HW: ${lastResult!.usedHardwareAcceleration}  Time: ${lastResult!.durationMs}ms'),
-              if (lastResult!.qualityWarning != null) Text('Warning: ${lastResult!.qualityWarning}', style: const TextStyle(color: Colors.orange)),
-              if (lastResult!.wasKeptOriginal) const Text('Kept original — output would have been larger', style: TextStyle(color: Colors.blue)),
-            ])),
-          ),
+          if (progress != null)
+            Column(
+              children: [
+                const SizedBox(height: 8),
+                LinearProgressIndicator(value: progress!.progress),
+                Text(
+                  '${(progress!.progress * 100).toStringAsFixed(1)}%  ${progress!.encodedFrames}/${progress!.totalFrames}  ${progress!.currentFps.toStringAsFixed(1)} fps  stage:${progress!.stage}',
+                ),
+                if (progress!.estimatedRemaining != null)
+                  Text('ETA: ${progress!.estimatedRemaining}'),
+              ],
+            ),
+          if (lastResult != null)
+            Card(
+              color: Colors.green.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Output: ${lastResult!.outputPath}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      'Size: ${lastResult!.originalSizeBytes} → ${lastResult!.outputSizeBytes}  Saved: ${lastResult!.savedBytes} (${lastResult!.compressionPercentage.toStringAsFixed(1)}%)',
+                    ),
+                    Text(
+                      'Ratio: ${lastResult!.compressionRatio.toStringAsFixed(2)}x  Codec: ${lastResult!.codec}/${lastResult!.container}  HW: ${lastResult!.usedHardwareAcceleration}  Time: ${lastResult!.durationMs}ms',
+                    ),
+                    if (lastResult!.qualityWarning != null)
+                      Text(
+                        'Warning: ${lastResult!.qualityWarning}',
+                        style: const TextStyle(color: Colors.orange),
+                      ),
+                    if (lastResult!.wasKeptOriginal)
+                      const Text(
+                        'Kept original — output would have been larger',
+                        style: TextStyle(color: Colors.blue),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           const Divider(height: 32),
-          const Text('Quality mapping (codec-aware):', style: TextStyle(fontWeight: FontWeight.bold)),
-          ...VideoQuality.values.map((q) => Text('  $q → H264:${QualityMapper.crfFor(q, VideoCodec.h264)}  H265:${QualityMapper.crfFor(q, VideoCodec.h265)}  AV1:${QualityMapper.crfFor(q, VideoCodec.av1)}')),
+          const Text(
+            'Quality mapping (codec-aware):',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          ...VideoQuality.values.map(
+            (q) => Text(
+              '  $q → H264:${QualityMapper.crfFor(q, VideoCodec.h264)}  H265:${QualityMapper.crfFor(q, VideoCodec.h265)}  AV1:${QualityMapper.crfFor(q, VideoCodec.av1)}',
+            ),
+          ),
         ],
       ),
     );

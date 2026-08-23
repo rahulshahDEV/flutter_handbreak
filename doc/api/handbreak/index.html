@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="handbreak library API docs, for the Dart programming language.">
+  <title>handbreak library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../static-assets/styles.css?v1">
+  <link rel="icon" href="../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../index.html">flutter_handbreak</a></li>
+    <li class="self-crumb">handbreak.dart</li>
+  </ol>
+  <div class="self-name">handbreak</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar=""
+    data-below-sidebar="handbreak&#47;handbreak-library-sidebar.html">
+  
+    <div>
+      
+
+      <h1>
+        <span class="kind-library">handbreak</span>
+        library 
+ 
+
+      </h1>
+    </div>
+
+    
+<section class="desc markdown">
+  <p>handbreak — production-grade Flutter media compression
+inspired by HandBrake's pipeline architecture.</p>
+<p>See <code>ARCHITECTURE.md</code> for the HandBrake analysis that drives this design.</p>
+</section>
+
+
+    <section class="summary offset-anchor" id="classes">
+      <h2>Classes</h2>
+      <dl>
+          <dt id="AdvancedEncoderOptions">
+  <span class="name "><a href="../flutter_handbreak/AdvancedEncoderOptions-class.html">AdvancedEncoderOptions</a></span> 
+
+</dt>
+<dd>
+  Advanced encoder knobs — codec-specific tuning without polluting the basic API.
+Example: <code>AdvancedEncoderOptions(crf: 22, preset: 'slow', tune: 'film', extra: {'profile':'high'})</code>
+</dd>
+
+          <dt id="AudioOptions">
+  <span class="name "><a href="../flutter_handbreak/AudioOptions-class.html">AudioOptions</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="AudioStreamInfo">
+  <span class="name "><a href="../flutter_handbreak/AudioStreamInfo-class.html">AudioStreamInfo</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="AverageBitrateRateControl">
+  <span class="name "><a href="../flutter_handbreak/AverageBitrateRateControl-class.html">AverageBitrateRateControl</a></span> 
+
+</dt>
+<dd>
+  Average-bitrate mode. Two-pass only where it provides real value — disabled by default on mobile.
+</dd>
+
+          <dt id="CompressionJob">
+  <span class="name "><a href="../flutter_handbreak/CompressionJob-class.html">CompressionJob</a></span> 
+
+</dt>
+<dd>
+  Live handle returned by <code>VideoCompressor.start</code> / <code>ImageCompressor.start</code>.
+Mirrors HandBrake's job lifecycle (HB_STATE_WORKING → HB_STATE_DONE) with Dart streams.
+</dd>
+
+          <dt id="CompressionProgress">
+  <span class="name "><a href="../flutter_handbreak/CompressionProgress-class.html">CompressionProgress</a></span> 
+
+</dt>
+<dd>
+  Progress based on actual media timestamps/frames — mirrors sync.c's frame_count/est_frame_count model.
+Never faked with timers.
+</dd>
+
+          <dt id="CompressionResult">
+  <span class="name "><a href="../flutter_handbreak/CompressionResult-class.html">CompressionResult</a></span> 
+
+</dt>
+<dd>
+  Returned after mux+validate. Re-probed output is embedded as <a href="../flutter_handbreak/CompressionResult/outputMediaInfo.html">outputMediaInfo</a>.
+</dd>
+
+          <dt id="ConstantQualityRateControl">
+  <span class="name "><a href="../flutter_handbreak/ConstantQualityRateControl-class.html">ConstantQualityRateControl</a></span> 
+
+</dt>
+<dd>
+  Constant-quality via discrete level → codec-aware CRF resolution.
+</dd>
+
+          <dt id="ConstantQualityValueRateControl">
+  <span class="name "><a href="../flutter_handbreak/ConstantQualityValueRateControl-class.html">ConstantQualityValueRateControl</a></span> 
+
+</dt>
+<dd>
+  Constant-quality via explicit native CRF/QP numeric.
+Advanced; codec-specific valid ranges apply — see <a href="../flutter_handbreak/QualityMapper/validRangeFor.html">QualityMapper.validRangeFor</a>.
+</dd>
+
+          <dt id="ContainerSupport">
+  <span class="name "><a href="../flutter_handbreak/ContainerSupport-class.html">ContainerSupport</a></span> 
+
+</dt>
+<dd>
+  Muxer reality per platform — what containers can actually be written.
+Android MediaMuxer: MPEG_4, WEBM (VP8/VP9 + Opus/Vorbis), 3GP(h263), OGG(Opus API29+).
+iOS AVAssetExportSession: mp4/mov/m4v only.
+</dd>
+
+          <dt id="CropFilter">
+  <span class="name "><a href="../flutter_handbreak/CropFilter-class.html">CropFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="DeinterlaceFilter">
+  <span class="name "><a href="../flutter_handbreak/DeinterlaceFilter-class.html">DeinterlaceFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="DenoiseFilter">
+  <span class="name "><a href="../flutter_handbreak/DenoiseFilter-class.html">DenoiseFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="EncodePlanResolver">
+  <span class="name "><a href="../flutter_handbreak/EncodePlanResolver-class.html">EncodePlanResolver</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="GrayscaleFilter">
+  <span class="name "><a href="../flutter_handbreak/GrayscaleFilter-class.html">GrayscaleFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="HandbreakProbe">
+  <span class="name "><a href="../flutter_handbreak/HandbreakProbe-class.html">HandbreakProbe</a></span> 
+
+</dt>
+<dd>
+  Robust source analysis — must run before encode when safe processing
+requires it. Mirrors HandBrake's scan.c → hb_title_t.
+</dd>
+
+          <dt id="HardwareCapabilities">
+  <span class="name "><a href="../flutter_handbreak/HardwareCapabilities-class.html">HardwareCapabilities</a></span> 
+
+</dt>
+<dd>
+  Snapshot of device encode/decode capabilities. Queried via native MediaCodecList / VideoToolbox.
+</dd>
+
+          <dt id="ImageCompressionOptions">
+  <span class="name "><a href="../flutter_handbreak/ImageCompressionOptions-class.html">ImageCompressionOptions</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ImageCompressor">
+  <span class="name "><a href="../flutter_handbreak/ImageCompressor-class.html">ImageCompressor</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ImagePlanTokens">
+  <span class="name "><a href="../flutter_handbreak/ImagePlanTokens-class.html">ImagePlanTokens</a></span> 
+
+</dt>
+<dd>
+  Small helper so callers without full MediaInfo can still resolve image jobs consistently.
+</dd>
+
+          <dt id="JobHandle">
+  <span class="name "><a href="../flutter_handbreak/JobHandle-class.html">JobHandle</a></span> 
+
+</dt>
+<dd>
+  Internal convenience used by platform impls that back jobs with EventChannel + MethodChannel.
+</dd>
+
+          <dt id="MediaInfo">
+  <span class="name "><a href="../flutter_handbreak/MediaInfo-class.html">MediaInfo</a></span> 
+
+</dt>
+<dd>
+  Robust source analysis — mirrors HandBrake's scan.c title probe.
+Every field that can influence the encode decision is surfaced here.
+</dd>
+
+          <dt id="PadFilter">
+  <span class="name "><a href="../flutter_handbreak/PadFilter-class.html">PadFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="QualityMapper">
+  <span class="name "><a href="../flutter_handbreak/QualityMapper-class.html">QualityMapper</a></span> 
+
+</dt>
+<dd>
+  Codec-aware quality mapping.
+HandBrake's lesson: lower number can mean higher quality depending on codec.
+Each codec has its own valid CRF/QP range; we map discrete <a href="../flutter_handbreak/VideoQuality.html">VideoQuality</a> → native value.
+</dd>
+
+          <dt id="RateControl">
+  <span class="name "><a href="../flutter_handbreak/RateControl-class.html">RateControl</a></span> 
+
+</dt>
+<dd>
+  Preferred rate-control mode. Constant-quality is default (HandBrake-aligned).
+</dd>
+
+          <dt id="ResolutionCalculator">
+  <span class="name "><a href="../flutter_handbreak/ResolutionCalculator-class.html">ResolutionCalculator</a></span> 
+
+</dt>
+<dd>
+  Pure, heavily-tested resolution math — mirrors HandBrake's
+picture sizing (sanitize_filter_list_pre/post + hb_geometry_t handling).
+</dd>
+
+          <dt id="ResolvedAudioPlan">
+  <span class="name "><a href="../flutter_handbreak/ResolvedAudioPlan-class.html">ResolvedAudioPlan</a></span> 
+
+</dt>
+<dd>
+  Effective audio execution plan after fallback resolution.
+</dd>
+
+          <dt id="ResolvedPlan">
+  <span class="name "><a href="../flutter_handbreak/ResolvedPlan-class.html">ResolvedPlan</a></span> 
+
+</dt>
+<dd>
+  Fully-resolved, native-executable encode plan.
+</dd>
+
+          <dt id="RotateFilter">
+  <span class="name "><a href="../flutter_handbreak/RotateFilter-class.html">RotateFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ScaleFilter">
+  <span class="name "><a href="../flutter_handbreak/ScaleFilter-class.html">ScaleFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="SharpenFilter">
+  <span class="name "><a href="../flutter_handbreak/SharpenFilter-class.html">SharpenFilter</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="Validation">
+  <span class="name "><a href="../flutter_handbreak/Validation-class.html">Validation</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="VideoCompressionOptions">
+  <span class="name "><a href="../flutter_handbreak/VideoCompressionOptions-class.html">VideoCompressionOptions</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="VideoCompressor">
+  <span class="name "><a href="../flutter_handbreak/VideoCompressor-class.html">VideoCompressor</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="VideoFilter">
+  <span class="name "><a href="../flutter_handbreak/VideoFilter-class.html">VideoFilter</a></span> 
+
+</dt>
+<dd>
+  Composable filter pipeline inspired by HandBrake's hb_filter_object_t chain.
+Filters are data objects; native resolves ordering and executes them.
+</dd>
+
+          <dt id="VideoStreamInfo">
+  <span class="name "><a href="../flutter_handbreak/VideoStreamInfo-class.html">VideoStreamInfo</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="enums">
+      <h2>Enums</h2>
+      <dl>
+          <dt id="AudioCodec">
+  <span class="name "><a href="../flutter_handbreak/AudioCodec.html">AudioCodec</a></span> 
+
+</dt>
+<dd>
+  Audio codec/mode. We never destroy audio silently.
+</dd>
+
+          <dt id="AudioMode">
+  <span class="name "><a href="../flutter_handbreak/AudioMode.html">AudioMode</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="DeinterlaceMode">
+  <span class="name "><a href="../flutter_handbreak/DeinterlaceMode.html">DeinterlaceMode</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="DenoiseStrength">
+  <span class="name "><a href="../flutter_handbreak/DenoiseStrength.html">DenoiseStrength</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="FrameRateMode">
+  <span class="name "><a href="../flutter_handbreak/FrameRateMode.html">FrameRateMode</a></span> 
+
+</dt>
+<dd>
+  Frame-rate handling. Mirrors HandBrake's CFR/VFR choice.
+</dd>
+
+          <dt id="HardwareAcceleration">
+  <span class="name "><a href="../flutter_handbreak/HardwareAcceleration.html">HardwareAcceleration</a></span> 
+
+</dt>
+<dd>
+  Hardware encoder selection policy — mirrors HandBrake's hwaccel fallback logic.
+</dd>
+
+          <dt id="ImageFormat">
+  <span class="name "><a href="../flutter_handbreak/ImageFormat.html">ImageFormat</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="ScaleAlgorithm">
+  <span class="name "><a href="../flutter_handbreak/ScaleAlgorithm.html">ScaleAlgorithm</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="SharpenStrength">
+  <span class="name "><a href="../flutter_handbreak/SharpenStrength.html">SharpenStrength</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="VideoCodec">
+  <span class="name "><a href="../flutter_handbreak/VideoCodec.html">VideoCodec</a></span> 
+
+</dt>
+<dd>
+  Pluggable video codecs. Default is H.264 for broad mobile compatibility.
+</dd>
+
+          <dt id="VideoContainer">
+  <span class="name "><a href="../flutter_handbreak/VideoContainer.html">VideoContainer</a></span> 
+
+</dt>
+<dd>
+  Container. MP4 is default; MKV used where Opus/AV1 passthrough prefers it.
+</dd>
+
+          <dt id="VideoPresetId">
+  <span class="name "><a href="../flutter_handbreak/VideoPresetId.html">VideoPresetId</a></span> 
+
+</dt>
+<dd>
+  Presets — conceptual analogues of HandBrake's built-ins, but tuned for mobile.
+Each preset maps to {codec, container, quality, max resolution, max fps, audio, hw policy}.
+</dd>
+
+          <dt id="VideoQuality">
+  <span class="name "><a href="../flutter_handbreak/VideoQuality.html">VideoQuality</a></span> 
+
+</dt>
+<dd>
+  Discrete constant-quality levels. Mapped codec-specifically in <a href="../flutter_handbreak/QualityMapper-class.html">QualityMapper</a>.
+DO NOT treat these as universal numbers; each codec maps them to its own CRF/QP range.
+</dd>
+
+      </dl>
+    </section>
+
+
+
+    <section class="summary offset-anchor" id="extensions">
+      <h2>Extensions</h2>
+      <dl>
+          <dt id="VideoPreset">
+  <span class="name "><a href="../flutter_handbreak/VideoPreset.html">VideoPreset</a></span>
+  on <a href="../flutter_handbreak/VideoPresetId.html">VideoPresetId</a>
+  
+
+</dt>
+<dd>
+  
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="constants">
+      <h2>Constants</h2>
+      <dl class="properties">
+          <dt id="defaultTargetPlatformName" class="constant">
+    <span class="name "><a href="../flutter_handbreak/defaultTargetPlatformName-constant.html">defaultTargetPlatformName</a></span>
+  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>
+  
+
+</dt>
+<dd>
+  Name used for capability lookups when the platform query itself failed.
+  
+
+</dd>
+
+          <dt id="kAndroidMp4CopyableAudio" class="constant">
+    <span class="name "><a href="../flutter_handbreak/kAndroidMp4CopyableAudio-constant.html">kAndroidMp4CopyableAudio</a></span>
+  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/Set-class.html">Set</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>&gt;</span></span>
+  
+
+</dt>
+<dd>
+  Audio codecs that can be bit-copied into MP4-family containers on Android.
+  
+
+</dd>
+
+          <dt id="kCanonicalFilterOrder" class="constant">
+    <span class="name "><a href="../flutter_handbreak/kCanonicalFilterOrder-constant.html">kCanonicalFilterOrder</a></span>
+  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>&gt;</span></span>
+  
+
+</dt>
+<dd>
+  Canonical filter order mirroring HandBrake's sanitize_filter_list_pre/post:
+crop → scale → pad → rotate → deinterlace → denoise → sharpen → grayscale
+  
+
+</dd>
+
+          <dt id="kIosCopyableAudio" class="constant">
+    <span class="name "><a href="../flutter_handbreak/kIosCopyableAudio-constant.html">kIosCopyableAudio</a></span>
+  <span class="signature">&#8594; const <a href="https://api.flutter.dev/flutter/dart-core/Set-class.html">Set</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>&gt;</span></span>
+  
+
+</dt>
+<dd>
+  iOS ExportSession re-encodes regardless; treat copy conservatively.
+  
+
+</dd>
+
+      </dl>
+    </section>
+
+
+    <section class="summary offset-anchor" id="functions">
+      <h2>Functions</h2>
+      <dl class="callables">
+          <dt id="canonicalizeFilters" class="callable">
+  <span class="name"><a href="../flutter_handbreak/canonicalizeFilters.html">canonicalizeFilters</a></span><span class="signature">(<wbr><span class="parameter" id="canonicalizeFilters-param-filters"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="../flutter_handbreak/VideoFilter-class.html">VideoFilter</a></span>&gt;</span></span> <span class="parameter-name">filters</span></span>)
+    <span class="returntype parameter">&#8594; <a href="https://api.flutter.dev/flutter/dart-core/List-class.html">List</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>, <span class="type-parameter">dynamic</span>&gt;</span></span>&gt;</span></span>
+  </span>
+  
+
+</dt>
+<dd>
+  
+  
+
+</dd>
+
+          <dt id="mapNativeError" class="callable">
+  <span class="name"><a href="../flutter_handbreak/mapNativeError.html">mapNativeError</a></span><span class="signature">(<wbr><span class="parameter" id="mapNativeError-param-map"><span class="type-annotation"><a href="https://api.flutter.dev/flutter/dart-core/Map-class.html">Map</a><span class="signature">&lt;<wbr><span class="type-parameter"><a href="https://api.flutter.dev/flutter/dart-core/String-class.html">String</a></span>, <span class="type-parameter">dynamic</span>&gt;</span></span> <span class="parameter-name">map</span></span>)
+    <span class="returntype parameter">&#8594; <a href="../flutter_handbreak/HandbreakException-class.html">HandbreakException</a></span>
+  </span>
+  
+
+</dt>
+<dd>
+  Map a native error code string to a typed exception.
+  
+
+</dd>
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="typedefs">
+      <h2>Typedefs</h2>
+      <dl>
+          
+  <dt id="VideoPresetAlias" class="">
+  <span class="name"><a href="../flutter_handbreak/VideoPresetAlias.html">VideoPresetAlias</a></span>
+    = <a href="../flutter_handbreak/VideoPresetId.html">VideoPresetId</a>
+  </span>
+  
+
+</dt>
+<dd>
+  Legacy alias so callers can write <code>VideoPreset.balanced</code> like the spec example.
+  
+
+</dd>
+
+
+      </dl>
+    </section>
+
+    <section class="summary offset-anchor" id="exceptions">
+      <h2>Exceptions / Errors</h2>
+      <dl>
+          <dt id="CancelledCompressionException">
+  <span class="name "><a href="../flutter_handbreak/CancelledCompressionException-class.html">CancelledCompressionException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="CodecUnavailableException">
+  <span class="name "><a href="../flutter_handbreak/CodecUnavailableException-class.html">CodecUnavailableException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="EncodingException">
+  <span class="name "><a href="../flutter_handbreak/EncodingException-class.html">EncodingException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="HandbreakException">
+  <span class="name "><a href="../flutter_handbreak/HandbreakException-class.html">HandbreakException</a></span> 
+
+</dt>
+<dd>
+  Structured error hierarchy mirroring HandBrake's done_error categories.
+Every native error is mapped to one of these; <a href="../flutter_handbreak/HandbreakException/nativeCode.html">nativeCode</a>/<a href="../flutter_handbreak/HandbreakException/nativeMessage.html">nativeMessage</a>
+are preserved for diagnostics without leaking internals.
+</dd>
+
+          <dt id="HardwareEncoderUnavailableException">
+  <span class="name "><a href="../flutter_handbreak/HardwareEncoderUnavailableException-class.html">HardwareEncoderUnavailableException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="InsufficientStorageException">
+  <span class="name "><a href="../flutter_handbreak/InsufficientStorageException-class.html">InsufficientStorageException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="InvalidInputException">
+  <span class="name "><a href="../flutter_handbreak/InvalidInputException-class.html">InvalidInputException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="OutOfMemoryException">
+  <span class="name "><a href="../flutter_handbreak/OutOfMemoryException-class.html">OutOfMemoryException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="OutputCreationException">
+  <span class="name "><a href="../flutter_handbreak/OutputCreationException-class.html">OutputCreationException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+          <dt id="UnsupportedFormatException">
+  <span class="name "><a href="../flutter_handbreak/UnsupportedFormatException-class.html">UnsupportedFormatException</a></span> 
+
+</dt>
+<dd>
+  
+</dd>
+
+      </dl>
+    </section>
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../index.html">flutter_handbreak</a></li>
+    <li class="self-crumb">handbreak.dart</li>
+</ol>
+
+    <h5><span class="package-name">flutter_handbreak</span> <span class="package-kind">package</span></h5>
+    <ol>
+      <li class="section-title">Libraries</li>
+      <li><a href="../flutter_handbreak/">flutter_handbreak</a></li>
+      <li><a href="../handbreak/">handbreak</a></li>
+</ol>
+
+  </div>
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+    <h5>handbreak library</h5>
+  </div><!--/sidebar-offcanvas-right-->
+</main>
+<footer>
+  <span class="no-break">
+    flutter_handbreak
+      0.3.0
+  </span>
+  
+</footer>
+
+
+<script src="../static-assets/highlight.pack.js?v1"></script>
+<script src="../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

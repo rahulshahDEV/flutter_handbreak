@@ -46,9 +46,14 @@ class FlutterHandbreak {
                   : q >= 40
                       ? VideoQuality.low
                       : VideoQuality.veryLow;
-      opts = VideoCompressionOptions(rateControl: RateControl.constantQuality(vq));
+      opts =
+          VideoCompressionOptions(rateControl: RateControl.constantQuality(vq));
     }
-    final job = await VideoCompressor.start(inputPath, options: opts, outputPath: outputPath);
+    final job = await VideoCompressor.start(
+      inputPath,
+      options: opts,
+      outputPath: outputPath,
+    );
     if (onProgress != null) job.progress.listen(onProgress);
     return job.result;
   }
@@ -60,7 +65,11 @@ class FlutterHandbreak {
     String? outputPath,
     void Function(CompressionProgress)? onProgress,
   }) async {
-    final job = await VideoCompressor.start(inputPath, options: options, outputPath: outputPath);
+    final job = await VideoCompressor.start(
+      inputPath,
+      options: options,
+      outputPath: outputPath,
+    );
     if (onProgress != null) job.progress.listen(onProgress);
     return job.result;
   }

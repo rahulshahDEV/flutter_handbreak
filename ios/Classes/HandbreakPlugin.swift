@@ -26,7 +26,12 @@ public class HandbreakPlugin: NSObject, FlutterPlugin {
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "getHardwareCapabilities":
-            result(HardwareCapabilitiesProvider.get())
+            // Audit P1-10: VTCompressionSession probes are expensive and must
+            // never run on the platform/main thread.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let caps = HardwareCapabilitiesProvider.get()
+                DispatchQueue.main.async { result(caps) }
+            }
 
         case "probe":
             guard let args = call.arguments as? [String: Any],

@@ -119,13 +119,15 @@ object MediaProbe {
         }
 
         if (durationMs > 0) {
-            overallBitrate = ((fileSize * 8 * 1000) / durationMs).toInt()
+            // Audit P2-1/P2-2: clamp against Int overflow for gigantic files/durations.
+            val clampedDurMs = durationMs.coerceIn(1, 31_536_000_000L) // 1s..1000 years
+            overallBitrate = ((fileSize * 8 * 1000) / clampedDurMs).coerceIn(0, 400_000_000).toInt()
         }
 
         return mapOf(
             "path" to path,
             "container" to container,
-            "durationMs" to durationMs.toInt(),
+            "durationMs" to durationMs.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
             "fileSizeBytes" to fileSize,
             "overallBitrate" to overallBitrate,
             "videoStreams" to videoStreams,

@@ -79,7 +79,8 @@ extension VideoPreset on VideoPresetId {
           container: VideoContainer.mp4,
           rateControl: const RateControl.constantQuality(VideoQuality.medium),
           maxWidth: 1080,
-          maxHeight: 1920, // allow portrait (HandBrake keeps portrait via rotation-corrected geometry)
+          maxHeight:
+              1920, // allow portrait (HandBrake keeps portrait via rotation-corrected geometry)
           frameRateMode: FrameRateMode.sameAsSource,
           maxFrameRate: 30,
           audio: const AudioOptions(bitrateKbps: 128, mixdown: 'stereo'),
@@ -140,14 +141,22 @@ extension VideoPreset on VideoPresetId {
       };
 
   String get description => switch (this) {
-        VideoPresetId.fast => 'Quick encode, hardware preferred. Good for previews.',
-        VideoPresetId.balanced => 'Default quality-first mobile preset. H.264, MP4, up to 1080p30.',
-        VideoPresetId.highQuality => 'Higher bitrate/CQ, keeps 1080p, AAC 160k.',
-        VideoPresetId.smallFile => 'HEVC for ~40% smaller than H.264 at similar quality.',
-        VideoPresetId.socialMedia => 'H.264 MP4 up to 1080×1920 @30fps, AAC stereo — safe for Instagram/TikTok.',
-        VideoPresetId.messaging => 'Aggressive downscale to 720², mono audio — minimal bytes.',
-        VideoPresetId.web => 'HEVC/AAC 128k. Use H.264 override for legacy browsers.',
-        VideoPresetId.archive => 'Near-lossless, MKV, preserves resolution & audio.',
+        VideoPresetId.fast =>
+          'Quick encode, hardware preferred. Good for previews.',
+        VideoPresetId.balanced =>
+          'Default quality-first mobile preset. H.264, MP4, up to 1080p30.',
+        VideoPresetId.highQuality =>
+          'Higher bitrate/CQ, keeps 1080p, AAC 160k.',
+        VideoPresetId.smallFile =>
+          'HEVC for ~40% smaller than H.264 at similar quality.',
+        VideoPresetId.socialMedia =>
+          'H.264 MP4 up to 1080×1920 @30fps, AAC stereo — safe for Instagram/TikTok.',
+        VideoPresetId.messaging =>
+          'Aggressive downscale to 720², mono audio — minimal bytes.',
+        VideoPresetId.web =>
+          'HEVC/AAC 128k. Use H.264 override for legacy browsers.',
+        VideoPresetId.archive =>
+          'Near-lossless, MKV, preserves resolution & audio.',
       };
 }
 

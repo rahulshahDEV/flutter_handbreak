@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1, user-scalable=no">
+  <meta name="description" content="API docs for the toOptions method from the VideoPreset extension, for the Dart programming language.">
+  <title>toOptions method - VideoPreset extension - flutter_handbreak library - Dart API</title>
+
+
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  
+  <link rel="stylesheet" href="../../static-assets/github.css?v1">
+  <link rel="stylesheet" href="../../static-assets/styles.css?v1">
+  <link rel="icon" href="../../static-assets/favicon.png?v1">
+  
+</head>
+
+<body data-base-href="../../" data-using-base-href="false" class="light-theme">
+<div id="overlay-under-drawer"></div>
+<header id="title">
+  <span id="sidenav-left-toggle" class="material-symbols-outlined" role="button" tabindex="0">menu</span>
+  <ol class="breadcrumbs gt-separated dark hidden-xs">
+    <li><a href="../../index.html">flutter_handbreak</a></li>
+    <li><a href="../../flutter_handbreak/">flutter_handbreak.dart</a></li>
+    <li><a href="../../flutter_handbreak/VideoPreset.html">VideoPreset</a></li>
+    <li class="self-crumb">toOptions method</li>
+  </ol>
+  <div class="self-name">toOptions</div>
+  <form class="search navbar-right" role="search">
+    <input type="text" id="search-box" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+  <button class="toggle" id="theme-button" title="Toggle between light and dark mode" aria-label="Light and dark mode toggle">
+    <span id="dark-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      dark_mode
+    </span>
+    <span id="light-theme-button" class="material-symbols-outlined" aria-hidden="true">
+      light_mode
+    </span>
+  </button>
+</header>
+<main>
+<div
+    id="dartdoc-main-content"
+    class="main-content"
+    data-above-sidebar="flutter_handbreak&#47;VideoPreset-extension-sidebar.html"
+    data-below-sidebar="">
+    <div>
+<h1><span class="kind-method">toOptions</span> method 
+</h1></div>
+
+    <section class="multi-line-signature">
+      
+<span class="returntype"><a href="../../flutter_handbreak/VideoCompressionOptions-class.html">VideoCompressionOptions</a></span>
+<span class="name ">toOptions</span>(<wbr>{<ol class="parameter-list"> <li><span class="parameter" id="toOptions-param-codecOverride"><span class="type-annotation"><a href="../../flutter_handbreak/VideoCodec.html">VideoCodec</a>?</span> <span class="parameter-name">codecOverride</span>, </span></li>
+</ol>})
+
+      
+
+    </section>
+    
+<section class="desc markdown">
+  <p>Resolve preset → concrete options. Caller may override individual fields afterwards via copyWith.</p>
+</section>
+
+
+    
+<section class="summary source-code" id="source">
+  <h2><span>Implementation</span></h2>
+  <pre class="language-dart"><code class="language-dart">VideoCompressionOptions toOptions({VideoCodec? codecOverride}) {
+  switch (this) {
+    case VideoPresetId.fast:
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h264,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.low),
+        maxWidth: 1280,
+        maxHeight: 720,
+        frameRateMode: FrameRateMode.sameAsSource,
+        maxFrameRate: 30,
+        audio: const AudioOptions(bitrateKbps: 96),
+        hardwareAcceleration: HardwareAcceleration.hardwarePreferred,
+        presetName: name,
+      );
+    case VideoPresetId.balanced:
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h264,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.medium),
+        maxWidth: 1920,
+        maxHeight: 1080,
+        frameRateMode: FrameRateMode.sameAsSource,
+        maxFrameRate: 30,
+        audio: const AudioOptions(bitrateKbps: 128),
+        hardwareAcceleration: HardwareAcceleration.auto,
+        presetName: name,
+      );
+    case VideoPresetId.highQuality:
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h264,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.high),
+        maxWidth: 1920,
+        maxHeight: 1080,
+        frameRateMode: FrameRateMode.sameAsSource,
+        audio: const AudioOptions(bitrateKbps: 160),
+        hardwareAcceleration: HardwareAcceleration.auto,
+        presetName: name,
+      );
+    case VideoPresetId.smallFile:
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h265,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.low),
+        maxWidth: 1280,
+        maxHeight: 720,
+        frameRateMode: FrameRateMode.sameAsSource,
+        maxFrameRate: 30,
+        audio: const AudioOptions(bitrateKbps: 96),
+        hardwareAcceleration: HardwareAcceleration.auto,
+        presetName: name,
+      );
+    case VideoPresetId.socialMedia:
+      &#47;&#47; social platforms re-encode; 1080p&#47;30 + AAC stereo @128 is the sweet spot
+      return VideoCompressionOptions(
+        codec: VideoCodec.h264, &#47;&#47; always H.264 for broad compatibility
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.medium),
+        maxWidth: 1080,
+        maxHeight:
+            1920, &#47;&#47; allow portrait (HandBrake keeps portrait via rotation-corrected geometry)
+        frameRateMode: FrameRateMode.sameAsSource,
+        maxFrameRate: 30,
+        audio: const AudioOptions(bitrateKbps: 128, mixdown: &#39;stereo&#39;),
+        hardwareAcceleration: HardwareAcceleration.hardwarePreferred,
+        presetName: name,
+      );
+    case VideoPresetId.messaging:
+      &#47;&#47; aggressive size reduction; still intelligible
+      return VideoCompressionOptions(
+        codec: VideoCodec.h264,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.low),
+        maxWidth: 720,
+        maxHeight: 720,
+        frameRateMode: FrameRateMode.sameAsSource,
+        maxFrameRate: 30,
+        audio: const AudioOptions(bitrateKbps: 64, mixdown: &#39;mono&#39;),
+        hardwareAcceleration: HardwareAcceleration.hardwarePreferred,
+        presetName: name,
+      );
+    case VideoPresetId.web:
+      &#47;&#47; modern web: HEVC where possible, else H.264
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h265,
+        container: VideoContainer.mp4,
+        rateControl: const RateControl.constantQuality(VideoQuality.medium),
+        maxWidth: 1920,
+        maxHeight: 1080,
+        frameRateMode: FrameRateMode.sameAsSource,
+        audio: const AudioOptions(codec: AudioCodec.aac, bitrateKbps: 128),
+        hardwareAcceleration: HardwareAcceleration.auto,
+        presetName: name,
+      );
+    case VideoPresetId.archive:
+      &#47;&#47; preserve quality, allow 4K
+      return VideoCompressionOptions(
+        codec: codecOverride ?? VideoCodec.h265,
+        container: VideoContainer.mkv,
+        rateControl: const RateControl.constantQuality(VideoQuality.veryHigh),
+        &#47;&#47; no maxWidth&#47;maxHeight — keep source resolution
+        frameRateMode: FrameRateMode.sameAsSource,
+        audio: const AudioOptions(mode: AudioMode.copy),
+        hardwareAcceleration: HardwareAcceleration.auto,
+        presetName: name,
+      );
+  }
+}</code></pre>
+</section>
+
+
+  </div> <!-- /.main-content -->
+  <div id="dartdoc-sidebar-left" class="sidebar sidebar-offcanvas-left">
+    <!-- The search input and breadcrumbs below are only responsively visible at low resolutions. -->
+<header id="header-search-sidebar" class="hidden-l">
+  <form class="search-sidebar" role="search">
+    <input type="text" id="search-sidebar" autocomplete="off" disabled class="form-control typeahead" placeholder="Loading search...">
+  </form>
+</header>
+<ol class="breadcrumbs gt-separated dark hidden-l" id="sidebar-nav">
+    <li><a href="../../index.html">flutter_handbreak</a></li>
+    <li><a href="../../flutter_handbreak/">flutter_handbreak</a></li>
+    <li><a href="../../flutter_handbreak/VideoPreset.html">VideoPreset</a></li>
+    <li class="self-crumb">toOptions method</li>
+</ol>
+
+    <h5>VideoPreset extension on <a href="../../flutter_handbreak/VideoPresetId.html">VideoPresetId</a></h5>
+    <div id="dartdoc-sidebar-left-content"></div>
+  </div><!--/.sidebar-offcanvas-->
+  <div id="dartdoc-sidebar-right" class="sidebar sidebar-offcanvas-right">
+</div><!--/.sidebar-offcanvas-->
+</main>
+<footer>
+  <span class="no-break">
+    flutter_handbreak
+      0.3.0
+  </span>
+  
+</footer>
+
+
+<script src="../../static-assets/highlight.pack.js?v1"></script>
+<script src="../../static-assets/docs.dart.js"></script>
+
+</body>
+</html>
+

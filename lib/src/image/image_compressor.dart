@@ -22,7 +22,8 @@ class ImageCompressor {
     ImageCompressionOptions options = const ImageCompressionOptions(),
     String? outputPath,
   }) async {
-    final job = await start(inputPath, options: options, outputPath: outputPath);
+    final job =
+        await start(inputPath, options: options, outputPath: outputPath);
     try {
       return await job.result;
     } finally {
@@ -41,7 +42,10 @@ class ImageCompressor {
     options.validate();
     Validation.requireFileExists(inputPath);
     final out = _resolveOutputPath(inputPath, outputPath);
-    Validation.requireOutputWritable(out, overwriteExisting: options.overwriteExisting);
+    Validation.requireOutputWritable(
+      out,
+      overwriteExisting: options.overwriteExisting,
+    );
     Validation.requireNotSameFile(inputPath, out);
 
     final jobId = await _impl.startImageCompression(
