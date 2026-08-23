@@ -7,7 +7,6 @@ import '../models/media_info.dart';
 import '../presets/video_preset.dart';
 import '../probe/handbreak_probe.dart';
 import '../video/rate_control.dart';
-import '../video/video_codec.dart';
 import '../video/video_compression_options.dart';
 import '../video/video_compressor.dart';
 

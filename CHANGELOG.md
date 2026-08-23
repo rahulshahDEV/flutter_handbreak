@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — 2026-08-23
+
+- Rename package to `flutter_handbreak` (keep `handbreak.dart` alias for compatibility)
+- Add lightweight `FlutterHandbreak` facade: `compressVideo(path, quality: 80, preset: ...)` one-liner
+- HandBrake-inspired credit banner + funding metadata for pub.dev
+- Exclude internal docs (PRODUCTION_REVIEW) from published archive — clean open-source
+- Fix facade unused import, example dependency rename
+
+
 ## 0.2.0 — 2026-08-22 (production hardening)
 
 Full audit: [PRODUCTION_REVIEW.md](PRODUCTION_REVIEW.md).
@@ -31,6 +40,7 @@ Full audit: [PRODUCTION_REVIEW.md](PRODUCTION_REVIEW.md).
 - Stall watchdog on Android pipeline (fails loudly after 30 s without progress).
 - Tests: resolver fallbacks, filter canonical order, validation helpers, error-code parity.
 
+
 ## 0.1.0 — 2026-08-22
 
 - Initial release, Phase 1.
@@ -38,3 +48,4 @@ Full audit: [PRODUCTION_REVIEW.md](PRODUCTION_REVIEW.md).
 - Android: MediaExtractor probe, MediaCodec encode (H.264), MediaMuxer, Bitmap image path, JobManager with cancellation & temp cleanup, progress via EventChannel.
 - iOS: AVFoundation/VideoToolbox pipeline, ImageIO/CoreGraphics image path, JobManager.
 - Docs: ARCHITECTURE.md (HandBrake analysis), THIRD_PARTY_LICENSES, example app, benchmark harness.
+
