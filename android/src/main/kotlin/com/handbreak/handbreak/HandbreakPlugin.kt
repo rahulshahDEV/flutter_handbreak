@@ -32,8 +32,8 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private val eventSinks = ConcurrentHashMap<String, EventChannel.EventSink>()
     private val jobManager = JobManager(maxConcurrentJobs = 1)
     // jobId → future for waitForResult
-    private val jobFutures = ConcurrentHashMap<String, java.util.concurrent.Future<Map<String, Any>>>()
-    private val jobResults = ConcurrentHashMap<String, Map<String, Any>>()
+    private val jobFutures = ConcurrentHashMap<String, java.util.concurrent.Future<Map<String, Any?>>>()
+    private val jobResults = ConcurrentHashMap<String, Map<String, Any?>>()
     private val jobErrors = ConcurrentHashMap<String, Map<String, Any>>()
 
     /** Background executors — a long waitForResult must NEVER block probe/caps (P1-3). */
@@ -92,7 +92,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 waitExecutor.execute {
                     try {
                         val fut = jobFutures[jobId]
-                            ?: return@execute mainHandler.post { result.error("INVALID_INPUT", "Unknown jobId $jobId", null) }
+                        if (fut == null) {
+                            mainHandler.post { result.error("INVALID_INPUT", "Unknown jobId $jobId", null) }
+                            return@execute
+                        }
                         val res = fut.get()
                         mainHandler.post { result.success(res) }
                     } catch (e: java.util.concurrent.CancellationException) {
@@ -254,7 +257,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         })
     }
 
-    private fun postProgress(jobId: String, prog: Map<String, Any>) {
+    private fun postProgress(jobId: String, prog: Map<String, Any?>) {
         val sink = eventSinks[jobId] ?: return
         mainHandler.post { try { sink.success(prog) } catch (_: Exception) {} }
     }

@@ -28,7 +28,7 @@ class DownmixTest {
         val shorts = java.nio.ByteBuffer.wrap(out).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         assertEquals(200, shorts.get(0).toInt()) // (100+300)/2
         assertEquals(0, shorts.get(1).toInt())   // (-100+100)/2
-        assertEquals(2, out.size)
+        assertEquals(4, out.size) // 2 frames × 1 ch × 2 bytes
     }
 
     @Test
@@ -38,7 +38,7 @@ class DownmixTest {
         val shorts = java.nio.ByteBuffer.wrap(out).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         assertEquals(1000, shorts.get(0).toInt())
         assertEquals(2000, shorts.get(1).toInt())
-        assertEquals(2 * 2, out.size) // 2 frames x 2 channels x 2 bytes
+        assertEquals(8, out.size) // 2 frames × 2 ch × 2 bytes
     }
 
     @Test
@@ -169,8 +169,8 @@ class JobManagerTest {
     fun `bounded queue rejects excess jobs without blocking the caller`() {
         val mgr = JobManager(maxConcurrentJobs = 1)
         val gate = java.util.concurrent.CountDownLatch(1)
-        val jobs = (1..JobManager.MAX_QUEUED_JOBS + 1).map { mgr.createJob() }
-        // Occupy the single worker so everything queues.
+        val jobs = (1..JobManager.MAX_QUEUED_JOBS).map { mgr.createJob() }
+        // Occupy the single worker so everything queues (1 running + 7 queued = 8).
         val first = mgr.submit(jobs[0]) { gate.await(5, java.util.concurrent.TimeUnit.SECONDS); "x" }
         jobs.drop(1).forEach { mgr.submit(it) { "y" } }
         // The (MAX_QUEUED_JOBS+1)th job must be rejected synchronously.
@@ -203,9 +203,10 @@ class JobManagerTest {
         assertFalse("cancelled queued job body must not run", ran.get())
         try {
             queuedFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
-            assertTrue("expected CancellationException", false)
-        } catch (e: java.util.concurrent.CancellationException) {
-            // expected
+            assertTrue("expected cancellation failure", false)
+        } catch (e: java.util.concurrent.ExecutionException) {
+            // task threw CancellationException → wrapped in ExecutionException
+            assertTrue(e.cause is java.util.concurrent.CancellationException)
         }
         mgr.shutdown()
     }

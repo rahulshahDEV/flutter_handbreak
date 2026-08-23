@@ -35,7 +35,7 @@ object ImageTranscoder {
         inputPath: String, outputPath: String, opts: Options,
         jobId: String, jobManager: JobManager,
         onProgress: (Map<String, Any>) -> Unit
-    ): Map<String, Any> {
+    ): Map<String, Any?> {
         val start = System.currentTimeMillis()
         val inFile = File(inputPath)
         if (!inFile.exists()) throw IllegalArgumentException("Input not found: $inputPath")

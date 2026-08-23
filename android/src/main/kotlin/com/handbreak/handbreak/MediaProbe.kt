@@ -15,7 +15,7 @@ import java.io.File
  */
 object MediaProbe {
 
-    fun probe(path: String): Map<String, Any> {
+    fun probe(path: String): Map<String, Any?> {
         val file = File(path)
         if (!file.exists()) throw IllegalArgumentException("File not found: $path")
         val fileSize = file.length()
@@ -24,8 +24,8 @@ object MediaProbe {
         var container = guessContainer(path)
         var durationMs = 0L
         var overallBitrate = 0
-        val videoStreams = mutableListOf<Map<String, Any>>()
-        val audioStreams = mutableListOf<Map<String, Any>>()
+        val videoStreams = mutableListOf<Map<String, Any?>>()
+        val audioStreams = mutableListOf<Map<String, Any?>>()
         val metadata = mutableMapOf<String, String>()
         var hasBFrames = false
 

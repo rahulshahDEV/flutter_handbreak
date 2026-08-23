@@ -12,6 +12,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.ArrayDeque
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -51,6 +52,8 @@ object VideoTranscoder {
         val targetFps: Double,
         val limitFrameRate: Boolean,
         val container: String,
+        val containerFallbackNote: String?,
+        val hwFallbackNote: String?,
         val useHardware: Boolean,
         val rateControlMode: String, // cq | cq_value | abr
         val crf: Double?,
@@ -73,6 +76,8 @@ object VideoTranscoder {
                     targetFps = (m["targetFps"] as? Number)?.toDouble() ?: 30.0,
                     limitFrameRate = m["limitFrameRate"] as? Boolean ?: false,
                     container = m["container"] as? String ?: "mp4",
+                    containerFallbackNote = m["containerFallbackNote"] as? String,
+                    hwFallbackNote = m["hwFallbackNote"] as? String,
                     useHardware = m["useHardware"] as? Boolean ?: false,
                     rateControlMode = m["rateControlMode"] as? String ?: "cq",
                     crf = (m["crf"] as? Number)?.toDouble(),
@@ -91,6 +96,7 @@ object VideoTranscoder {
         private val b = { k: String, d: Boolean -> raw[k] as? Boolean ?: d }
 
         val codec get() = s("codec", "h264")
+        val container get() = s("container", "mp4")
         val hardwareAcceleration get() = s("hardwareAcceleration", "auto")
         val keepOriginalIfSmaller get() = b("keepOriginalIfSmaller", false)
 
@@ -151,8 +157,8 @@ object VideoTranscoder {
         optsRaw: Map<String, Any>,
         jobId: String,
         jobManager: JobManager,
-        onProgress: (Map<String, Any>) -> Unit,
-    ): Map<String, Any> {
+        onProgress: (Map<String, Any?>) -> Unit,
+    ): Map<String, Any?> {
         val startMs = System.currentTimeMillis()
         val opts = Options(optsRaw)
         val inFile = File(inputPath)
@@ -212,8 +218,8 @@ object VideoTranscoder {
         }
 
         val notes = mutableListOf<String>()
-        plan?.containerFallbackNote()?.let(notes::add)
-        plan?.hwFallbackNote()?.let(notes::add)
+        plan?.containerFallbackNote?.let(notes::add)
+        plan?.hwFallbackNote?.let(notes::add)
 
         val requireHw = opts.hardwareAcceleration == "hardwareOnly"
 
@@ -361,7 +367,7 @@ object VideoTranscoder {
             // ---- muxer ----
             val muxerFormat = when (effectiveContainer) {
                 "webm" -> MediaMuxer.OutputFormat.MUXER_OUTPUT_WEBM
-                "3gp" -> MediaMuxer.OutputFormat.MUXER_OUTPUT_THREE_GPP
+                "3gp" -> if (Build.VERSION.SDK_INT >= 26) 2 /* MUXER_OUTPUT_THREE_GPP */ else MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
                 else -> MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
             }
             muxer = MediaMuxer(tmpFile.absolutePath, muxerFormat)
@@ -706,7 +712,7 @@ object VideoTranscoder {
         if (saved > 0 && origSize > 0 && saved * 100 / origSize < 5 && (probeInfo["overallBitrate"] as Int) in 1..1_500_000) {
             notes.add("Source appears already heavily compressed; recompression saved only ${"%.1f".format(saved * 100.0 / origSize)}%.")
         }
-        baseResult(inFile, outFile, startMs, usedHw, opts.codec, effectiveContainer, keptOriginal = false, notes, outProbe)
+        return baseResult(inFile, outFile, startMs, usedHw, opts.codec, effectiveContainer, keptOriginal = false, notes, outProbe)
     }
 
     // ------------------------------------------------------------ helpers
@@ -743,8 +749,8 @@ object VideoTranscoder {
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun probeVideoStreams(probe: Map<String, Any>): List<Map<String, Any>> =
-        (probe["videoStreams"] as? List<Map<String, Any>>) ?: emptyList()
+    private fun probeVideoStreams(probe: Map<String, Any?>): List<Map<String, Any?>> =
+        (probe["videoStreams"] as? List<Map<String, Any?>>) ?: emptyList()
 
     private fun mimeFor(codec: String): String = when (codec.lowercase()) {
         "h265", "hevc" -> MediaFormat.MIMETYPE_VIDEO_HEVC
@@ -869,8 +875,8 @@ object VideoTranscoder {
         container: String,
         keptOriginal: Boolean,
         notes: MutableList<String>,
-        outputProbe: Map<String, Any>? = null,
-    ): Map<String, Any> {
+        outputProbe: Map<String, Any?>? = null,
+    ): Map<String, Any?> {
         val outSize = outFile.length()
         val origSize = inFile.length()
         val saved = (origSize - outSize).coerceAtLeast(0)

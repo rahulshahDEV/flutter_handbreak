@@ -45,7 +45,7 @@ class JobManager(private val maxConcurrentJobs: Int = 1) {
         val id: String = UUID.randomUUID().toString(),
         val cancelFlag: AtomicBoolean = AtomicBoolean(false),
         val state: AtomicReference<JobState> = AtomicReference(JobState.CREATED),
-        @Volatile var progressSink: ((Map<String, Any>) -> Unit)? = null,
+        @Volatile var progressSink: ((Map<String, Any?>) -> Unit)? = null,
         var tempOutputPath: String? = null,
     )
 
@@ -112,7 +112,7 @@ class JobManager(private val maxConcurrentJobs: Int = 1) {
 
     fun stateName(jobId: String): String? = jobs[jobId]?.state?.get()?.name
 
-    fun emitProgress(jobId: String, progress: Map<String, Any>) {
+    fun emitProgress(jobId: String, progress: Map<String, Any?>) {
         jobs[jobId]?.progressSink?.invoke(progress)
     }
 

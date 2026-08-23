@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.2 — 2026-08-23 (first real Kotlin compile — critical)
+
+- **The Android plugin now actually compiles.** First standalone Gradle build
+  (unit tests + release AAR) surfaced genuine compile errors that a consumer's
+  app build would have hit:
+  - `Options.container` property missing (unresolved reference)
+  - `Plan.containerFallbackNote/hwFallbackNote` referenced but never parsed
+  - `MUXER_OUTPUT_THREE_GPP` absent from compileSdk 34 android.jar → version-guarded literal
+  - nullable result values vs `Map<String, Any>` → relaxed to `Map<String, Any?>`
+  - missing `return` in `transcode` terminal statement
+  - `kotlin.math.abs` import missing
+  - `mainHandler.post` Boolean/Unit mismatch in waitForResult
+- **16 JVM unit tests now execute** (Gradle `testDebugUnitTest`): Downmix,
+  ResolutionHelper, JobManager (non-blocking submit, idempotent cancel,
+  bounded queue, queued-job cancellation, state machine). All pass.
+- `assembleRelease` verified: 92 KB AAR, classes.jar only, **zero native .so
+  binaries** (lightweight claim now measured, not assumed).
+- JVM test expectations corrected (stereo→mono output size, 5ch→stereo frame
+  math, ExecutionException-wrapped task cancellation).
+
 ## 1.0.1 — 2026-08-23 (final hardening pass)
 
 - **P0**: unbounded codec feed loops eliminated — NV12/PCM/EOS delivery is now
