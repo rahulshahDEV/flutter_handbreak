@@ -1,0 +1,53 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+build/
+*.lock
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.keystore
+*.jks
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+**/Pods/
+*.xcworkspace
+*.xcuserdata
+DerivedData/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# HandBrake clone used for analysis (not part of package)
+handbrake-src/
+
+# Tooling / local configs (do not publish)
+.opencode/
+.claude/
+.muse/
+.agents/
+*.log
+
+# Temp outputs
+*.mp4.tmp
+*.tmp
+handbreak_bench_results.json
+PRODUCTION_REVIEW.md
+
+# Example generated (do not commit)
+example/android/local.properties
+example/.dart_tool/
+**/GeneratedPluginRegistrant.java

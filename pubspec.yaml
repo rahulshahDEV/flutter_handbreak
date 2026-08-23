@@ -1,0 +1,47 @@
+name: flutter_handbreak
+description: >
+  Lightweight Flutter video & image compression inspired by HandBrake — quality-first,
+  hardware-accelerated, any-format fallback. Easy one-liner API with presets & progress.
+version: 0.3.0
+homepage: https://github.com/rahulshahDEV/flutter_handbreak
+repository: https://github.com/rahulshahDEV/flutter_handbreak
+issue_tracker: https://github.com/rahulshahDEV/flutter_handbreak/issues
+funding:
+  - https://github.com/sponsors/rahulshahDEV
+screenshots:
+  - description: Compress video with preset — one-liner
+    path: assets/screenshot_compress.png
+  - description: Quality vs size — HandBrake-inspired CQ mapping
+    path: assets/screenshot_quality.png
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  plugin_platform_interface: ^2.1.8
+  meta: ^1.12.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  mockito: ^5.4.4
+  build_runner: ^2.4.13
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.handbreak.handbreak
+        pluginClass: HandbreakPlugin
+      ios:
+        pluginClass: HandbreakPlugin
+
+topics:
+  - video
+  - image
+  - compression
+  - media
