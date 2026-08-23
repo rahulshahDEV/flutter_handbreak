@@ -18,7 +18,8 @@ print('${result.compressionPercentage.toStringAsFixed(1)}% smaller');
 ## Features
 
 - **Video**: H.264 / H.265 / AV1 / VP9 · MP4 / MOV / WebM / 3GP · constant-quality & bitrate modes
-- **Image**: JPEG / PNG / WebP / HEIC / AVIF · EXIF-aware · alpha-preserving
+- **Image**: JPEG / PNG / WebP everywhere; HEIC / AVIF where the device encoder
+  exists (falls back to JPEG with an explicit warning) · EXIF-aware · alpha-preserving
 - **Hardware accelerated**: MediaCodec (Android) + VideoToolbox (iOS), software fallback
 - **One-liner API** with a unified 0–100 quality scale, or full control via options
 - **Progress, cancellation, presets, probing, capabilities**
@@ -28,10 +29,10 @@ print('${result.compressionPercentage.toStringAsFixed(1)}% smaller');
 
 ```yaml
 dependencies:
-  flutter_handbreak: ^0.3.1
+  flutter_handbreak: ^1.0.2
 ```
 
-Android `minSdk 21` · iOS 13+ · no FFmpeg or large native binaries bundled (~96 KB archive).
+Android `minSdk 21` · iOS 13+ · no FFmpeg or large native binaries bundled (measured: ~102 KB archive, zero `.so` in the Android AAR).
 
 ## Quick start
 
@@ -71,6 +72,17 @@ final info = await FlutterHandbreak.probe('/path/clip.mov'); // streams, rotatio
 | [Platforms](doc/PLATFORMS.md) | Codec/container matrix, hardware, safety, limitations |
 | [Architecture](doc/ARCHITECTURE.md) | Pipeline design & HandBrake analysis |
 | [Migration roadmap](doc/MIGRATION.md) | Planned C++/FFI core |
+
+## Verification status
+
+- Verified on this machine: `flutter analyze` clean · 94 Dart unit tests ·
+  16 Android JVM tests (Gradle) · Android release AAR build · iOS Swift
+  typecheck · `dart pub publish --dry-run` clean.
+- **UNVERIFIED — requires physical devices**: real-media fixture matrix
+  (see `integration_test/README.md`), per-OEM hardware behavior, iOS
+  orientation A/B, VFR/HDR edge cases, thermal/battery profiling, and
+  HW-vs-SW benchmarks. This package does **not** claim device-tested status.
+- Reproducible local verification: `tool/verify.sh`.
 
 ## License & credits
 

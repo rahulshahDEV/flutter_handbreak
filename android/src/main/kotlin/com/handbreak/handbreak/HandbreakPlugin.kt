@@ -163,24 +163,28 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 closeProgress(job.id)
                 res
             } catch (e: VideoTranscoder.CancellationException) {
+                jobManager.markCancelled(job.id) // 🔴-4: terminal state now
                 val err = mapOf("code" to "CANCELLED", "message" to "Cancelled")
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
                 throw java.util.concurrent.CancellationException("Cancelled")
             } catch (e: VideoTranscoder.StallException) {
+                jobManager.markFailed(job.id)
                 val err = mapOf("code" to "TIMEOUT", "message" to (e.message ?: "Encoder stalled"))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
                 throw e
             } catch (e: IllegalArgumentException) {
+                jobManager.markFailed(job.id)
                 val err = mapOf("code" to "INVALID_INPUT", "message" to (e.message ?: "Invalid input"))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
                 throw e
             } catch (e: IllegalStateException) {
+                jobManager.markFailed(job.id)
                 val code = if (e.message?.contains("Hardware", true) == true) "HARDWARE_UNAVAILABLE" else "ENCODING_ERROR"
                 val err = mapOf("code" to code, "message" to (e.message ?: "Encoding failed"))
                 jobErrors[job.id] = err
@@ -188,6 +192,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 closeProgress(job.id)
                 throw e
             } catch (e: Exception) {
+                jobManager.markFailed(job.id)
                 val err = mapOf("code" to "ENCODING_ERROR", "message" to (e.message ?: "Unknown"))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
@@ -222,10 +227,12 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 closeProgress(job.id)
                 res
             } catch (e: VideoTranscoder.CancellationException) {
+                jobManager.markCancelled(job.id)
                 val err = mapOf("code" to "CANCELLED", "message" to "Cancelled")
                 jobErrors[job.id] = err; postProgress(job.id, mapOf("error" to err)); closeProgress(job.id)
                 throw java.util.concurrent.CancellationException("Cancelled")
             } catch (e: Exception) {
+                jobManager.markFailed(job.id)
                 val err = mapOf("code" to mapErrorCode(e), "message" to (e.message ?: "Unknown"))
                 jobErrors[job.id] = err; postProgress(job.id, mapOf("error" to err)); closeProgress(job.id)
                 throw e

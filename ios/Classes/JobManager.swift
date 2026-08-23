@@ -13,6 +13,7 @@ enum JobState: String, CaseIterable {
     case validating = "VALIDATING"
     case committing = "COMMITTING"
     case completed = "COMPLETED"
+    case cancelling = "CANCELLING"
     case cancelled = "CANCELLED"
     case failed = "FAILED"
     case disposed = "DISPOSED"
@@ -29,6 +30,10 @@ final class Job {
 
     private let stateLock = NSLock()
     private var _state: JobState = .created
+    /// 🔴-4: request vs terminal distinction. Set synchronously on cancel;
+    /// pipelines and progress use it as the cooperative stop signal.
+    private let cancelRequestedLock = NSLock()
+    private var _cancelRequested = false
 
     var progressSink: (([String: Any]) -> Void)?
     var finished = false
@@ -61,8 +66,22 @@ final class Job {
         return _state
     }
 
-    /// Convenience: cooperative cancellation checks inside pipelines.
-    var isCancelled: Bool { state == .cancelled }
+    /// Cooperative cancellation checks inside pipelines — true the moment a
+    /// cancel is REQUESTED, not only after the terminal transition (🔴-4).
+    var isCancelled: Bool {
+        cancelRequestedLock.lock(); defer { cancelRequestedLock.unlock() }
+        return _cancelRequested
+    }
+
+    func requestCancel() {
+        cancelRequestedLock.lock()
+        _cancelRequested = true
+        cancelRequestedLock.unlock()
+        transition(to: .cancelling,
+                   allowedFrom: [.created, .queued, .probing, .planning,
+                                 .initializing, .running, .draining,
+                                 .validating, .committing])
+    }
 }
 
 final class JobManager {
@@ -88,10 +107,7 @@ final class JobManager {
 
     func cancel(jobId: String) {
         withJob(jobId) { j in
-            j.transition(to: .cancelled,
-                         allowedFrom: [.created, .queued, .probing, .planning,
-                                       .initializing, .running, .draining,
-                                       .validating, .committing])
+            j.requestCancel() // CANCELLING (requested); terminal set on drain
             j.withTask { task in
                 if let s = task as? AVAssetExportSession { s.cancelExport() }
                 if let w = task as? AVAssetWriter { w.cancelWriting() }
@@ -181,7 +197,8 @@ final class JobManager {
         job.continuation = nil
         let sink = job.progressSink
         lock.unlock()
-        job.transition(to: .failed, allowedFrom: [.queued, .probing, .planning, .initializing, .running, .draining, .validating, .committing, .created])
+        let terminal: JobState = (code == "CANCELLED") ? .cancelled : .failed
+        job.transition(to: terminal, allowedFrom: [.queued, .probing, .planning, .initializing, .running, .draining, .validating, .committing, .created, .cancelling])
         sink?(["error": err])
         cont?(["error": err])
     }

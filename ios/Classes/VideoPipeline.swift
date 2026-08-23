@@ -173,11 +173,47 @@ enum VideoPipeline {
 
             let ticker = emitProgress(manager, job, session, durationMs, Int(targetFps))
 
+            // 🔴-2: the export wait must be bounded. AVFoundation can in rare
+            // cases stall without completing; a watchdog monitors session.progress
+            // and cancels + fails the job with TIMEOUT instead of hanging forever.
             let done = DispatchSemaphore(value: 0)
+            var stalled = false
+            let stallLock = NSLock()
+            let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+            watchdog.schedule(deadline: .now() + 30, repeating: 5)
+            var lastProgress = Double(session.progress)
+            watchdog.setEventHandler {
+                let p = Double(session.progress)
+                if session.status == .exporting && p <= lastProgress {
+                    stallLock.lock()
+                    if !stalled {
+                        stalled = true
+                        session.cancelExport()
+                        done.signal()
+                    }
+                    stallLock.unlock()
+                }
+                lastProgress = p
+                if session.status != .exporting {
+                    watchdog.cancel()
+                }
+            }
+            watchdog.resume()
             session.exportAsynchronously { done.signal() }
+            // Bounded wait: worst case ~30 s after the watchdog cancels.
             done.wait()
+            watchdog.cancel()
             ticker.cancel()
             job.setTask(nil)
+
+            stallLock.lock()
+            let wasStalled = stalled
+            stallLock.unlock()
+            if wasStalled {
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: "TIMEOUT", message: "Export stalled: no progress for 30s")
+                return
+            }
 
             switch session.status {
             case .completed: break

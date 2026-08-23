@@ -18,14 +18,28 @@ flutter test
 echo "== 4/6 package validation =="
 dart pub publish --dry-run
 
+echo "== 5/7 iOS Swift typecheck =="
+if command -v xcrun >/dev/null; then
+  IOS_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null || true)"
+  if [ -n "$IOS_SDK" ]; then
+    (cd ios/Classes && xcrun swiftc -typecheck -sdk "$IOS_SDK" -target arm64-apple-ios13.0-simulator \
+      Support.swift HardwareProbe.swift JobManager.swift MediaProbe.swift \
+      ImagePipeline.swift VideoPipeline.swift VideoPipelineSupport.swift)
+  else
+    echo "  (iphonesimulator SDK unavailable — skipped)"
+  fi
+else
+  echo "  (xcode CLT unavailable — skipped)"
+fi
+
 if [ -n "$GRADLE_BIN" ] && [ -d "${ANDROID_HOME:-$HOME/Library/Android/sdk}/platforms" ]; then
-  echo "== 5/6 Android JVM tests =="
+  echo "== 6/7 Android JVM tests =="
   (cd android && FLUTTER_ROOT="$(dirname "$(dirname "$(readlink -f "$(command -v flutter)")")")" \
     "$GRADLE_BIN" testDebugUnitTest --no-daemon)
-  echo "== 6/6 Android AAR =="
+  echo "== 7/7 Android AAR =="
   (cd android && "$GRADLE_BIN" assembleRelease --no-daemon)
 else
-  echo "== 5-6/6 SKIPPED: Android SDK/gradle not found =="
+  echo "== 6-7/7 SKIPPED: Android SDK/gradle not found =="
 fi
 
 echo "ALL VERIFICATION PASSED"

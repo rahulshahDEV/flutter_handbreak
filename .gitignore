@@ -53,3 +53,6 @@ example/.dart_tool/
 **/GeneratedPluginRegistrant.java
 
 doc/api/
+
+# Real-media fixtures (licensing/size — never commit)
+tool/fixtures/

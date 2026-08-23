@@ -169,9 +169,17 @@ class JobManagerTest {
     fun `bounded queue rejects excess jobs without blocking the caller`() {
         val mgr = JobManager(maxConcurrentJobs = 1)
         val gate = java.util.concurrent.CountDownLatch(1)
-        val jobs = (1..JobManager.MAX_QUEUED_JOBS).map { mgr.createJob() }
-        // Occupy the single worker so everything queues (1 running + 7 queued = 8).
-        val first = mgr.submit(jobs[0]) { gate.await(5, java.util.concurrent.TimeUnit.SECONDS); "x" }
+        val blockerStarted = java.util.concurrent.CountDownLatch(1)
+        val jobs = (1..JobManager.MAX_QUEUED_JOBS + 1).map { mgr.createJob() }
+        // Deterministically occupy the single worker BEFORE filling the queue:
+        // wait until the blocker is actually running (thread started).
+        val first = mgr.submit(jobs[0]) {
+            blockerStarted.countDown()
+            gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            "x"
+        }
+        assertTrue(blockerStarted.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        // 1 running + 8 queued = 9 in-flight = exactly full (queue capacity 8).
         jobs.drop(1).forEach { mgr.submit(it) { "y" } }
         // The (MAX_QUEUED_JOBS+1)th job must be rejected synchronously.
         val overflow = mgr.createJob()

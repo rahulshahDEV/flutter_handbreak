@@ -103,19 +103,21 @@ class FakeHandbreakPlatform extends HandbreakPlatform {
     }
     final c = resultCompleter;
     if (c != null && !c.isCompleted) {
-      c.complete(CompressionResult.fromMap({
-        'inputPath': '/fake/in.mp4',
-        'outputPath': '/fake/out.mp4',
-        'originalSizeBytes': 5000000,
-        'outputSizeBytes': 1500000,
-        'savedBytes': 3500000,
-        'compressionRatio': 3.3,
-        'compressionPercentage': 70.0,
-        'durationMs': 1200,
-        'usedHardwareAcceleration': true,
-        'codec': 'h264',
-        'container': 'mp4',
-      }),);
+      c.complete(
+        CompressionResult.fromMap({
+          'inputPath': '/fake/in.mp4',
+          'outputPath': '/fake/out.mp4',
+          'originalSizeBytes': 5000000,
+          'outputSizeBytes': 1500000,
+          'savedBytes': 3500000,
+          'compressionRatio': 3.3,
+          'compressionPercentage': 70.0,
+          'durationMs': 1200,
+          'usedHardwareAcceleration': true,
+          'codec': 'h264',
+          'container': 'mp4',
+        }),
+      );
     }
     return c!.future;
   }
@@ -164,7 +166,8 @@ void main() {
       final opts = fake.lastOptions!;
       expect(opts['plan'], isA<Map<String, dynamic>>());
       final plan = ResolvedPlan.fromMap(
-          Map<String, dynamic>.from(opts['plan'] as Map),);
+        Map<String, dynamic>.from(opts['plan'] as Map),
+      );
       expect(plan.width, 1280); // capped
       expect(plan.height, 720);
       expect(plan.containerId, 'mp4');
@@ -185,7 +188,8 @@ void main() {
         outputPath: '${tmp.path}/out.mp4',
       );
       final plan = ResolvedPlan.fromMap(
-          Map<String, dynamic>.from(fake.lastOptions!['plan'] as Map),);
+        Map<String, dynamic>.from(fake.lastOptions!['plan'] as Map),
+      );
       expect(plan.useHardware, isFalse);
       expect(await job.result, isA<CompressionResult>());
     });
@@ -196,7 +200,8 @@ void main() {
         outputPath: '${tmp.path}/out.mp4',
       );
       await job.cancel();
-      await expectLater(job.result, throwsA(isA<CancelledCompressionException>()));
+      await expectLater(
+          job.result, throwsA(isA<CancelledCompressionException>()),);
     });
 
     test('compress() disposes the job after result', () async {

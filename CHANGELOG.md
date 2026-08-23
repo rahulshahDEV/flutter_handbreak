@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.0.3 — 2026-08-23 (deep multimedia correctness)
+
+- **🔴 muxer ordering**: audio-transcode track registration counted in
+  `pendingTracks` — `MediaMuxer.start()` now waits for BOTH video and audio
+  track registration (previously a race where the video encoder's
+  format-changed could `start()` before the audio track existed →
+  `addTrack` after `start()` threw IllegalStateException on transcode jobs).
+- **🔴 bounded waits**: iOS export wait is now watchdog-bounded — 30 s without
+  session progress cancels the export and fails with `TIMEOUT` instead of
+  hanging forever (`done.wait()` was unbounded).
+- **🔴 explicit queue capacity**: `JobManager` now uses a structural
+  `ThreadPoolExecutor(1, ArrayBlockingQueue(8))` — no semaphore, no soft
+  counters; overflow is rejected synchronously (`QUEUE_FULL`).
+- **🔴 cancellation semantics**: `CANCELLING` (requested) is distinct from
+  `CANCELLED` (terminal). `cancelJob` requests; the worker drains, then the
+  plugin marks the terminal state. iOS mirrors this with a `cancelRequested`
+  flag + `.cancelling` state.
+- **Integration/stress lane**: `integration_test/` device harness (probe,
+  rotation, A/V sync, keep-original, cancellation storms, queue bounds,
+  decompression-bomb) with fixture manifest — ready to run on hardware,
+  documented as UNVERIFIED until run.
+- **Claims tightened**: README image/filter claims match implementation;
+  install example pinned to `^1.0.2`; archive size updated to measured
+  ~102 KB / zero `.so`; explicit "Verification status" section added.
+- `tool/verify.sh` extended with the iOS Swift typecheck lane.
+- JVM test suite: 16/16 passing (bounded-queue determinism fixed).
+
 ## 1.0.2 — 2026-08-23 (first real Kotlin compile — critical)
 
 - **The Android plugin now actually compiles.** First standalone Gradle build

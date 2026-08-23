@@ -11,11 +11,13 @@ void main() {
     // the facade delegates to the same RateControl the quality levels produce.
     test('quality bucket mapping mirrors VideoQuality CRF scale', () {
       // 0-100 -> veryHigh/high/medium/low/veryLow, then QualityMapper per codec.
-      final veryHigh = QualityMapper.crfFor(VideoQuality.veryHigh, VideoCodec.h264);
+      final veryHigh =
+          QualityMapper.crfFor(VideoQuality.veryHigh, VideoCodec.h264);
       final high = QualityMapper.crfFor(VideoQuality.high, VideoCodec.h264);
       final medium = QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264);
       final low = QualityMapper.crfFor(VideoQuality.low, VideoCodec.h264);
-      final veryLow = QualityMapper.crfFor(VideoQuality.veryLow, VideoCodec.h264);
+      final veryLow =
+          QualityMapper.crfFor(VideoQuality.veryLow, VideoCodec.h264);
 
       expect(veryHigh, lessThan(high));
       expect(high, lessThan(medium));
@@ -54,7 +56,8 @@ void main() {
       );
     });
 
-    test('output path collision without overwrite throws OutputCreationException',
+    test(
+        'output path collision without overwrite throws OutputCreationException',
         () async {
       final input = File('${tmp.path}/a.mp4')..writeAsStringSync('x');
       final out = File('${tmp.path}/out.mp4')..writeAsStringSync('x');
@@ -77,7 +80,8 @@ void main() {
       expect(opts.keepOriginalIfSmaller, isTrue);
     });
 
-    test('video default rate control is constant quality (CQ-first like HandBrake)',
+    test(
+        'video default rate control is constant quality (CQ-first like HandBrake)',
         () {
       const opts = VideoCompressionOptions();
       expect(opts.effectiveRateControl, isA<ConstantQualityRateControl>());
@@ -133,7 +137,8 @@ void main() {
         caps: caps,
       );
       expect(plan.rateControlMode, 'cq');
-      expect(plan.crf, QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264));
+      expect(
+          plan.crf, QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264),);
       expect(plan.useHardware, isTrue);
     });
   });

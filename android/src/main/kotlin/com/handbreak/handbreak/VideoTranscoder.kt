@@ -371,8 +371,14 @@ object VideoTranscoder {
                 else -> MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
             }
             muxer = MediaMuxer(tmpFile.absolutePath, muxerFormat)
-            // Re-register passthrough audio track now (muxer instance created above).
-            var pendingTracks = 1 + (if (passthroughAudio) 1 else 0)
+            // Track registration MUST complete before start(): MediaMuxer.addTrack
+            // after start() throws. For transcoded audio the track is registered
+            // lazily on the encoder's INFO_OUTPUT_FORMAT_CHANGED, so it must be
+            // counted as pending (🔴-1: previously only passthrough audio was
+            // counted, allowing start() before the audio track existed).
+            var pendingTracks = 1 +
+                (if (passthroughAudio) 1 else 0) +
+                (if (audioTranscodeReady) 1 else 0)
             if (passthroughAudio) {
                 audioMuxTrack = muxer.addTrack(audioExtractor!!.getTrackFormat(audioSrcIdx!!))
             }
