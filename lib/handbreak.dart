@@ -6,6 +6,9 @@ library handbreak;
 
 export 'src/errors/handbreak_exception.dart';
 
+// Public platform contract — enables test fakes and alternate backends.
+export 'src/platform/handbreak_platform_interface.dart';
+
 export 'src/hardware/hardware_capabilities.dart';
 export 'src/hardware/hardware_acceleration.dart';
 

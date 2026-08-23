@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dart:
+    name: Analyze + Test (Dart)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.0
+          cache: true
+      - run: flutter pub get
+      - name: Analyze
+        run: flutter analyze --fatal-infos
+      - name: Format check
+        run: dart format --output=none --set-exit-if-changed .
+      - name: Unit tests
+        run: flutter test
+      - name: Package validation
+        run: dart pub publish --dry-run
+
+  android:
+    name: Android build + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.0
+          cache: true
+      - name: Gradle unit tests (JVM)
+        run: |
+          cd android
+          ./gradlew testDebugUnitTest --no-daemon
+      - name: Assemble plugin AAR
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+  ios:
+    name: iOS build (compile check)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.0
+          cache: true
+      - name: Pod install + build
+        run: |
+          flutter pub get
+          flutter build ios --simulator --no-codesign
