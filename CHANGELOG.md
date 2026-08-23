@@ -3,7 +3,7 @@
 ## 1.0.0 — 2026-08-23
 
 - **First stable release** (published on pub.dev as flutter_handbreak).
-- Documentation restructure: clean README + detailed docs under `docs/`
+- Documentation restructure: clean README + detailed docs under `doc/`
   (API reference, quality model, platform matrix, architecture, migration roadmap).
 - Full validation: analyze clean, 94 unit tests green, Swift typecheck clean,
   pub.dev dry-run 0 warnings.

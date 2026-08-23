@@ -66,11 +66,11 @@ final info = await FlutterHandbreak.probe('/path/clip.mov'); // streams, rotatio
 
 | Doc | Contents |
 |---|---|
-| [API reference](docs/API.md) | Every class, option, result & error |
-| [Quality model](docs/QUALITY.md) | Rate control, presets, filters, codec-aware CRF |
-| [Platforms](docs/PLATFORMS.md) | Codec/container matrix, hardware, safety, limitations |
-| [Architecture](docs/ARCHITECTURE.md) | Pipeline design & HandBrake analysis |
-| [Migration roadmap](docs/MIGRATION.md) | Planned C++/FFI core |
+| [API reference](doc/API.md) | Every class, option, result & error |
+| [Quality model](doc/QUALITY.md) | Rate control, presets, filters, codec-aware CRF |
+| [Platforms](doc/PLATFORMS.md) | Codec/container matrix, hardware, safety, limitations |
+| [Architecture](doc/ARCHITECTURE.md) | Pipeline design & HandBrake analysis |
+| [Migration roadmap](doc/MIGRATION.md) | Planned C++/FFI core |
 
 ## License & credits
 
