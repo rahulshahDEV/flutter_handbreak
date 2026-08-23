@@ -36,8 +36,9 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     private val jobResults = ConcurrentHashMap<String, Map<String, Any>>()
     private val jobErrors = ConcurrentHashMap<String, Map<String, Any>>()
 
-    /** Shared background executor for probe/caps/waitForResult — bounded (1 thread). */
-    private val ioExecutor = Executors.newSingleThreadExecutor()
+    /** Background executors — a long waitForResult must NEVER block probe/caps (P1-3). */
+    private val probeExecutor = Executors.newSingleThreadExecutor()
+    private val waitExecutor = Executors.newSingleThreadExecutor()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -50,13 +51,14 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         methodChannel.setMethodCallHandler(null)
         jobManager.shutdown() // cancels all jobs — no orphaned workers (P1-4)
-        ioExecutor.shutdown()
+        probeExecutor.shutdown()
+        waitExecutor.shutdown()
         flutterPluginBinding = null
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
-            "getHardwareCapabilities" -> ioExecutor.execute {
+            "getHardwareCapabilities" -> probeExecutor.execute {
                 try {
                     val caps = HardwareCapabilitiesProvider.get()
                     mainHandler.post { result.success(caps) }
@@ -67,7 +69,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "probe" -> {
                 val inputPath = call.argument<String>("inputPath")
                     ?: return result.error("INVALID_INPUT", "inputPath required", null)
-                ioExecutor.execute {
+                probeExecutor.execute {
                     try {
                         val info = MediaProbe.probe(inputPath)
                         mainHandler.post { result.success(info) }
@@ -87,7 +89,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 if (cached != null) { result.success(cached); return }
                 val err = jobErrors[jobId]
                 if (err != null) { result.success(mapOf("error" to err)); return }
-                ioExecutor.execute {
+                waitExecutor.execute {
                     try {
                         val fut = jobFutures[jobId]
                             ?: return@execute mainHandler.post { result.error("INVALID_INPUT", "Unknown jobId $jobId", null) }
@@ -114,6 +116,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "disposeJob" -> {
                 val jobId = call.argument<String>("jobId")
                 if (jobId != null) {
+                    // P1-1: dispose must also STOP any running native work
+                    // (parity with iOS) — no orphaned encoders after dispose.
+                    jobManager.cancelJob(jobId)
+                    try { jobFutures[jobId]?.cancel(true) } catch (_: Exception) {}
                     eventChannels.remove(jobId)?.setStreamHandler(null)
                     eventSinks.remove(jobId)
                     jobResults.remove(jobId)
@@ -138,7 +144,8 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val job = jobManager.createJob()
         registerProgressChannel(job.id)
 
-        val future = jobManager.submit(job) {
+        val future = try {
+            jobManager.submit(job) {
             jobManager.markRunning(job.id)
             try {
                 val res = VideoTranscoder.transcode(
@@ -158,6 +165,12 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
                 throw java.util.concurrent.CancellationException("Cancelled")
+            } catch (e: VideoTranscoder.StallException) {
+                val err = mapOf("code" to "TIMEOUT", "message" to (e.message ?: "Encoder stalled"))
+                jobErrors[job.id] = err
+                postProgress(job.id, mapOf("error" to err))
+                closeProgress(job.id)
+                throw e
             } catch (e: IllegalArgumentException) {
                 val err = mapOf("code" to "INVALID_INPUT", "message" to (e.message ?: "Invalid input"))
                 jobErrors[job.id] = err
@@ -179,6 +192,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw e
             }
         }
+        } catch (e: IllegalStateException) {
+            jobManager.removeJob(job.id)
+            return result.error("QUEUE_FULL", e.message, null)
+        }
         jobFutures[job.id] = future
         result.success(job.id)
     }
@@ -193,7 +210,8 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         val job = jobManager.createJob()
         registerProgressChannel(job.id)
         val opts = parseImageOptions(options)
-        val future = jobManager.submit(job) {
+        val future = try {
+            jobManager.submit(job) {
             jobManager.markRunning(job.id)
             try {
                 val res = ImageTranscoder.compress(inputPath, outputPath, opts, job.id, jobManager) { prog -> postProgress(job.id, prog) }
@@ -209,6 +227,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 jobErrors[job.id] = err; postProgress(job.id, mapOf("error" to err)); closeProgress(job.id)
                 throw e
             }
+        }
+        } catch (e: IllegalStateException) {
+            jobManager.removeJob(job.id)
+            return result.error("QUEUE_FULL", e.message, null)
         }
         jobFutures[job.id] = future
         result.success(job.id)
@@ -251,11 +273,13 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             preserveExif = m["preserveExif"] as? Boolean ?: false,
             preserveAlpha = m["preserveAlpha"] as? Boolean ?: true,
             progressive = m["progressive"] as? Boolean ?: false,
-            keepOriginalIfSmaller = m["keepOriginalIfSmaller"] as? Boolean ?: true
+            keepOriginalIfSmaller = m["keepOriginalIfSmaller"] as? Boolean ?: true,
+            overwriteExisting = m["overwriteExisting"] as? Boolean ?: false
         )
     }
 
     private fun mapErrorCode(e: Throwable?): String = when (e) {
+        is VideoTranscoder.StallException -> "TIMEOUT"
         is IllegalArgumentException -> "INVALID_INPUT"
         is IllegalStateException -> if (e.message?.contains("Hardware", true) == true) "HARDWARE_UNAVAILABLE" else "ENCODING_ERROR"
         is java.util.concurrent.CancellationException -> "CANCELLED"

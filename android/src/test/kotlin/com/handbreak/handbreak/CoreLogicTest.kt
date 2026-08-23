@@ -166,6 +166,51 @@ class JobManagerTest {
     }
 
     @Test
+    fun `bounded queue rejects excess jobs without blocking the caller`() {
+        val mgr = JobManager(maxConcurrentJobs = 1)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val jobs = (1..JobManager.MAX_QUEUED_JOBS + 1).map { mgr.createJob() }
+        // Occupy the single worker so everything queues.
+        val first = mgr.submit(jobs[0]) { gate.await(5, java.util.concurrent.TimeUnit.SECONDS); "x" }
+        jobs.drop(1).forEach { mgr.submit(it) { "y" } }
+        // The (MAX_QUEUED_JOBS+1)th job must be rejected synchronously.
+        val overflow = mgr.createJob()
+        val startNanos = System.nanoTime()
+        try {
+            mgr.submit(overflow) { "z" }
+            assertTrue("overflow job should have been rejected", false)
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("Too many queued"))
+        }
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+        assertTrue("rejection blocked the caller: ${elapsedMs}ms", elapsedMs < 500)
+        gate.countDown()
+        assertEquals("x", first.get(5, java.util.concurrent.TimeUnit.SECONDS))
+        mgr.shutdown()
+    }
+
+    @Test
+    fun `cancelled queued job never executes its body`() {
+        val mgr = JobManager(maxConcurrentJobs = 1)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val ran = java.util.concurrent.atomic.AtomicBoolean(false)
+        val blocker = mgr.submit(mgr.createJob()) { gate.await(5, java.util.concurrent.TimeUnit.SECONDS); "b" }
+        val queued = mgr.createJob()
+        val queuedFuture = mgr.submit(queued) { ran.set(true); "q" }
+        mgr.cancelJob(queued.id) // cancel BEFORE execution begins
+        gate.countDown()
+        assertEquals("b", blocker.get(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertFalse("cancelled queued job body must not run", ran.get())
+        try {
+            queuedFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
+            assertTrue("expected CancellationException", false)
+        } catch (e: java.util.concurrent.CancellationException) {
+            // expected
+        }
+        mgr.shutdown()
+    }
+
+    @Test
     fun `removeJob is idempotent`() {
         val mgr = JobManager(maxConcurrentJobs = 1)
         val j = mgr.createJob()

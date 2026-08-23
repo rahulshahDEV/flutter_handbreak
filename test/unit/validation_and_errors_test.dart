@@ -73,6 +73,7 @@ void main() {
         'CANCELLED': CancelledCompressionException,
         'INSUFFICIENT_STORAGE': InsufficientStorageException,
         'OUT_OF_MEMORY': OutOfMemoryException,
+        'TIMEOUT': CompressionTimeoutException,
         'SOMETHING_NEW': EncodingException, // unknown → generic Encoding
       };
       codes.forEach((code, type) {

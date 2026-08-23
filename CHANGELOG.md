@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.0.1 — 2026-08-23 (final hardening pass)
+
+- **P0**: unbounded codec feed loops eliminated — NV12/PCM/EOS delivery is now
+  bounded (15 s stall deadline), cancellation-aware, and fails with a dedicated
+  stall error instead of hanging forever on a broken encoder.
+- **P1**: per-lane stall watchdog (audio activity can no longer mask a dead video
+  lane); Android `disposeJob` now cancels running work (parity with iOS);
+  iOS orientation applied exactly once (track transform zeroed when a
+  videoComposition owns the transform — fixes double-rotation risk on
+  resize/fps-cap); `waitForResult` moved to its own executor so probing a new
+  file never blocks behind a running job.
+- **P2**: bounded admission queue (max 8 queued, `QUEUE_FULL` error);
+  100 MP decompression-bomb guard for images (fail safely, instruct caller);
+  overwrite policy enforced on the extension-renamed image output;
+  codec wait timeout 10 s → 1 s (fast cancellation); fractional FPS rounded.
+- **P3**: `CompressionTimeoutException` added to the typed error hierarchy
+  (native `TIMEOUT`); docs updated with device-UNVERIFIED items.
+- Tests: +2 JVM queue tests (bounded admission, queued-job cancellation),
+  +1 Dart error-parity case. 94 Dart + 17 JVM cases.
+
 ## 1.0.0 — 2026-08-23
 
 - **First stable release** (published on pub.dev as flutter_handbreak).

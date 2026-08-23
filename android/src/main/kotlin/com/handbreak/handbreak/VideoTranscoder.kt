@@ -38,6 +38,8 @@ object VideoTranscoder {
 
     class CancellationException(msg: String) : Exception(msg)
     class OutputValidationException(msg: String) : Exception(msg)
+    /** Dedicated stall/timeout failure — mapped to TIMEOUT at the plugin boundary. */
+    class StallException(msg: String) : Exception(msg)
 
     // ------------------------------------------------------------------ plan
 
@@ -396,12 +398,16 @@ object VideoTranscoder {
             var lastVideoPtsUs = Long.MIN_VALUE
             var lastAudioPtsUs = Long.MIN_VALUE
             var lastProgressMs = 0L
-            val timeoutUs = 10_000L
+            val timeoutUs = 1_000L // short per-call wait → fast cancellation (P2-4)
             val passBuf = ByteBuffer.allocateDirect(1 shl 17)
 
-            // stall watchdog: no observable progress in 30 s ⇒ fail loudly (never hang silently)
-            var lastActivityMs = System.currentTimeMillis()
-            fun noteActivity() { lastActivityMs = System.currentTimeMillis() }
+            // Per-lane stall watchdogs (P1-4): audio activity must never mask a
+            // dead video lane (or vice versa). 30 s without lane progress ⇒ fail.
+            val stallWindowMs = 30_000L
+            var lastVideoActivityMs = System.currentTimeMillis()
+            var lastAudioActivityMs = System.currentTimeMillis()
+            fun noteVideoActivity() { lastVideoActivityMs = System.currentTimeMillis() }
+            fun noteAudioActivity() { lastAudioActivityMs = System.currentTimeMillis() }
 
             // PTS gate — applied at DECODER OUTPUT (deterministic drop-only)
             var gateLastKeptUs = Long.MIN_VALUE
@@ -423,8 +429,14 @@ object VideoTranscoder {
             // ---------------- multiplexed main loop ----------------
             while (true) {
                 checkCancel(jobManager, jobId)
-                if (System.currentTimeMillis() - lastActivityMs > 30_000) {
-                    throw IllegalStateException("Encoder stalled: no pipeline progress for 30s")
+                val loopNow = System.currentTimeMillis()
+                val videoLaneDone = encoderDone
+                val audioLaneDone = !audioTranscodeReady || audioEncodeDone || passthroughEos
+                if (!videoLaneDone && loopNow - lastVideoActivityMs > stallWindowMs) {
+                    throw StallException("Video lane stalled: no encoder progress for 30s")
+                }
+                if (!audioLaneDone && loopNow - lastAudioActivityMs > stallWindowMs) {
+                    throw StallException("Audio lane stalled: no progress for 30s")
                 }
 
                 val lanesFinished = encoderDone &&
@@ -444,6 +456,7 @@ object VideoTranscoder {
                         } else {
                             decoder!!.queueInputBuffer(idx, 0, size, videoExtractor!!.sampleTime, 0)
                             videoExtractor!!.advance()
+                            noteVideoActivity()
                         }
                     }
                 }
@@ -457,18 +470,20 @@ object VideoTranscoder {
                             eos -> {
                                 decoderDone = true
                                 decoder!!.releaseOutputBuffer(outIdx, false)
-                                signalEncoderEos(encoder!!, surfaceMode, timeoutUs)
+                                signalEncoderEos(encoder!!, surfaceMode, timeoutUs, jobManager, jobId)
                             }
                             decInfo.size > 0 && keepFrame(decInfo.presentationTimeUs) -> {
                                 if (surfaceMode) {
                                     decoder!!.releaseOutputBuffer(outIdx, true) // renders into encoder surface
+                                    noteVideoActivity()
                                 } else {
                                     val img: Image? = decoder!!.getOutputImage(outIdx)
                                     if (img != null) {
                                         val nv12 = Yuv.toNv12(img)
                                         img.close()
-                                        feedEncoderNv12(encoder!!, nv12, decInfo.presentationTimeUs, timeoutUs)
+                                        feedEncoderNv12(encoder!!, nv12, decInfo.presentationTimeUs, timeoutUs, jobManager, jobId)
                                         decoder!!.releaseOutputBuffer(outIdx, false)
+                                        noteVideoActivity()
                                     } else {
                                         decoder!!.releaseOutputBuffer(outIdx, false)
                                     }
@@ -502,7 +517,7 @@ object VideoTranscoder {
                                 videoQueue.add(copySample(encoder!!.getOutputBuffer(o)!!, encInfo))
                                 encodedFrames++
                                 lastPtsUs = encInfo.presentationTimeUs
-                                noteActivity()
+                                noteVideoActivity()
                             }
                             encoder!!.releaseOutputBuffer(o, false)
                             if (eos) encoderDone = true
@@ -519,7 +534,7 @@ object VideoTranscoder {
                     } else {
                         audioQueue.add(pendingPassthrough(passBuf, size, audioExtractor!!.sampleTime, audioExtractor!!.sampleFlags))
                         audioExtractor!!.advance()
-                        noteActivity()
+                        noteAudioActivity()
                     }
                 }
 
@@ -546,8 +561,7 @@ object VideoTranscoder {
                             if (eos) {
                                 audioDecodeDone = true
                                 audioDecoder!!.releaseOutputBuffer(o, false)
-                                val ei = audioEncoder!!.dequeueInputBuffer(timeoutUs)
-                                if (ei >= 0) audioEncoder!!.queueInputBuffer(ei, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                queueEosBounded(audioEncoder!!, timeoutUs, jobManager, jobId)
                             } else if (audDecInfo.size > 0) {
                                 val pcm = audioDecoder!!.getOutputBuffer(o)!!.duplicate()
                                 pcm.position(audDecInfo.offset).limit(audDecInfo.offset + audDecInfo.size)
@@ -558,7 +572,7 @@ object VideoTranscoder {
                                 // encoder input buffer was momentarily unavailable —
                                 // retry until fed or cancelled.
                                 feedPcmRetry(audioEncoder!!, mixed, audDecInfo.presentationTimeUs, timeoutUs, jobManager, jobId)
-                                noteActivity()
+                                noteAudioActivity()
                             } else audioDecoder!!.releaseOutputBuffer(o, false)
                         }
                     }
@@ -576,7 +590,7 @@ object VideoTranscoder {
                                 val eos = audEncInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
                                 if (!eos && audioMuxTrack != -1 && muxerStarted && audEncInfo.size > 0) {
                                     audioQueue.add(copySample(audioEncoder!!.getOutputBuffer(o)!!, audEncInfo))
-                                    noteActivity()
+                                    noteAudioActivity()
                                 }
                                 audioEncoder!!.releaseOutputBuffer(o, false)
                                 if (eos) audioEncodeDone = true
@@ -762,17 +776,32 @@ object VideoTranscoder {
         } else !info.name.startsWith("OMX.google.")
     }
 
-    private fun signalEncoderEos(encoder: MediaCodec, surfaceMode: Boolean, timeoutUs: Long) {
+    private fun signalEncoderEos(
+        encoder: MediaCodec, surfaceMode: Boolean, timeoutUs: Long,
+        mgr: JobManager, jobId: String,
+    ) {
         if (surfaceMode) {
             runCatching { encoder.signalEndOfInputStream() }
         } else {
-            val idx = runCatching { encoder.dequeueInputBuffer(timeoutUs) }.getOrDefault(-1)
-            if (idx >= 0) encoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+            queueEosBounded(encoder, timeoutUs, mgr, jobId)
         }
     }
 
-    private fun feedEncoderNv12(encoder: MediaCodec, nv12: ByteArray, ptsUs: Long, timeoutUs: Long) {
+    /**
+     * Feed one NV12 frame to the byte-buffer encoder.
+     * BOUNDED: cancellation-aware + 15 s stall deadline (P0-1) — a broken encoder
+     * can no longer hang the job forever; it fails with [StallException].
+     */
+    private fun feedEncoderNv12(
+        encoder: MediaCodec, nv12: ByteArray, ptsUs: Long, timeoutUs: Long,
+        mgr: JobManager, jobId: String,
+    ) {
+        val deadlineMs = System.currentTimeMillis() + 15_000
         while (true) {
+            checkCancel(mgr, jobId)
+            if (System.currentTimeMillis() > deadlineMs) {
+                throw StallException("Video encoder input stalled (no input buffer for 15s)")
+            }
             val idx = encoder.dequeueInputBuffer(timeoutUs)
             if (idx >= 0) {
                 val ib = encoder.getInputBuffer(idx)!!
@@ -784,19 +813,45 @@ object VideoTranscoder {
         }
     }
 
-    /** Retry PCM feed until delivered — cancellation-aware, bounded by watchdog. */
+    /**
+     * Retry PCM feed until delivered — cancellation-aware + 15 s stall deadline
+     * (P0-2). Decoded PCM is NEVER dropped.
+     */
     private fun feedPcmRetry(
         encoder: MediaCodec, pcm: ByteArray, ptsUs: Long, timeoutUs: Long,
         mgr: JobManager, jobId: String,
     ) {
+        val deadlineMs = System.currentTimeMillis() + 15_000
         while (true) {
             checkCancel(mgr, jobId)
+            if (System.currentTimeMillis() > deadlineMs) {
+                throw StallException("Audio encoder input stalled (no input buffer for 15s)")
+            }
             val idx = encoder.dequeueInputBuffer(timeoutUs)
             if (idx >= 0) {
                 val eb = encoder.getInputBuffer(idx)!!
                 eb.clear()
                 eb.put(pcm)
                 encoder.queueInputBuffer(idx, 0, pcm.size, ptsUs, 0)
+                return
+            }
+        }
+    }
+
+    /**
+     * Queue EOS on an encoder input — bounded retry so a lost EOS can never
+     * strand a lane (P0-3/P0-4).
+     */
+    private fun queueEosBounded(encoder: MediaCodec, timeoutUs: Long, mgr: JobManager? = null, jobId: String? = null) {
+        val deadlineMs = System.currentTimeMillis() + 15_000
+        while (true) {
+            if (mgr != null && jobId != null) checkCancel(mgr, jobId)
+            if (System.currentTimeMillis() > deadlineMs) {
+                throw StallException("Encoder EOS stalled (no input buffer for 15s)")
+            }
+            val idx = runCatching { encoder.dequeueInputBuffer(timeoutUs) }.getOrDefault(-1)
+            if (idx >= 0) {
+                encoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                 return
             }
         }

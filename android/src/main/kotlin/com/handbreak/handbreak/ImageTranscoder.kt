@@ -17,6 +17,9 @@ import java.io.FileOutputStream
  */
 object ImageTranscoder {
 
+    /** 100 MP — beyond this, a full decode exceeds typical device bitmap heaps. */
+    private const val MAX_DECODE_PIXELS = 100_000_000L
+
     data class Options(
         val quality: Int, // 0..100
         val maxWidth: Int?, val maxHeight: Int?,
@@ -24,7 +27,8 @@ object ImageTranscoder {
         val preserveExif: Boolean,
         val preserveAlpha: Boolean,
         val progressive: Boolean,
-        val keepOriginalIfSmaller: Boolean
+        val keepOriginalIfSmaller: Boolean,
+        val overwriteExisting: Boolean
     )
 
     fun compress(
@@ -53,6 +57,18 @@ object ImageTranscoder {
         // decode with sampling to avoid OOM on huge images
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(inputPath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("Not a decodable image: $inputPath")
+        }
+        // P2-2 decompression-bomb guard: without explicit target dimensions a
+        // gigantic source would be decoded at full resolution and likely OOM.
+        // Fail safely and instruct the caller instead of attempting the decode.
+        val totalPixels = bounds.outWidth.toLong() * bounds.outHeight.toLong()
+        if (opts.maxWidth == null && opts.maxHeight == null && totalPixels > MAX_DECODE_PIXELS) {
+            throw IllegalArgumentException(
+                "Image too large to decode safely (${bounds.outWidth}x${bounds.outHeight}); pass maxWidth/maxHeight to downsample",
+            )
+        }
         var sample = 1
         // sample down if source vastly larger than target (avoid duplicate full-size buffers)
         if (opts.maxWidth != null || opts.maxHeight != null) {
@@ -125,6 +141,11 @@ object ImageTranscoder {
         val finalOut = if (outFile.extension.lowercase() != outExt.trimStart('.')) {
             File(outFile.parent, outFile.nameWithoutExtension + outExt)
         } else outFile
+        // P2-3: the extension-renamed destination may differ from the Dart-validated
+        // path — enforce the overwrite policy here too (defense in depth).
+        if (finalOut.exists() && !opts.overwriteExisting) {
+            throw IllegalStateException("Output already exists: $finalOut (set overwriteExisting=true to replace)")
+        }
 
         // encode — JPEG quality 0..100, PNG ignores quality (we still pass correctly)
         val qualityInt = opts.quality.coerceIn(0, 100)

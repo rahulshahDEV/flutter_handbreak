@@ -153,5 +153,6 @@ All errors extend `HandbreakException`:
 | `CancelledCompressionException` | job cancelled |
 | `EncodingException` | encode/mux/validation failure (generic) |
 | `InsufficientStorageException` / `OutOfMemoryException` | resource limits |
+| `CompressionTimeoutException` | native watchdog/stall — codec stopped progressing, job terminated |
 
 Every error carries `nativeCode` + `nativeMessage` for diagnostics.

@@ -52,6 +52,15 @@ enum ImagePipeline {
         let orientedW = swapsDimensions ? rawH : rawW
         let orientedH = swapsDimensions ? rawW : rawH
 
+        // P2-2 decompression-bomb guard: without explicit target dimensions a
+        // gigantic source would decode at full resolution and likely OOM.
+        let totalPixels = Int64(orientedW) * Int64(orientedH)
+        if maxW == nil && maxH == nil && totalPixels > 100_000_000 {
+            manager.fail(job: job, code: "INVALID_INPUT",
+                         message: "Image too large to decode safely (\(orientedW)x\(orientedH)); pass maxWidth/maxHeight to downsample")
+            return
+        }
+
         // ---- decode upright at needed size via Apple's transform-aware thumbnail ----
         // (replaces hand-written affine EXIF math — audit P0-6; Apple applies
         //  orientation correctly for all 8 cases including mirrored variants)

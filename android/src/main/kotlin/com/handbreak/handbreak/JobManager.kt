@@ -38,6 +38,9 @@ enum class JobState {
  */
 class JobManager(private val maxConcurrentJobs: Int = 1) {
 
+    /** Bounded admission queue (P2-1): excess jobs are rejected, not stacked. */
+    companion object { const val MAX_QUEUED_JOBS = 8 }
+
     data class Job(
         val id: String = UUID.randomUUID().toString(),
         val cancelFlag: AtomicBoolean = AtomicBoolean(false),
@@ -49,6 +52,7 @@ class JobManager(private val maxConcurrentJobs: Int = 1) {
     private val executor = Executors.newFixedThreadPool(maxConcurrentJobs.coerceAtLeast(1))
     private val semaphore = Semaphore(maxConcurrentJobs.coerceAtLeast(1))
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val queuedJobs = java.util.concurrent.atomic.AtomicInteger(0)
 
     fun createJob(): Job {
         val j = Job()
@@ -76,19 +80,27 @@ class JobManager(private val maxConcurrentJobs: Int = 1) {
     }
 
     fun <T> submit(job: Job, block: () -> T): java.util.concurrent.Future<T> {
-        // Semaphore is acquired INSIDE the task — never blocks the caller
-        // (fixes audit P0-1: MethodChannel handler on the main thread).
+        // Semaphore is acquired INSIDE the task — never blocks the caller.
         transition(job, JobState.QUEUED, allowFrom = setOf(JobState.CREATED))
+        if (queuedJobs.incrementAndGet() > MAX_QUEUED_JOBS) {
+            queuedJobs.decrementAndGet()
+            transition(job, JobState.FAILED, allowFrom = setOf(JobState.QUEUED))
+            throw IllegalStateException("Too many queued jobs (max $MAX_QUEUED_JOBS)")
+        }
         return executor.submit<T> {
-            semaphore.acquire()
             try {
-                if (job.cancelFlag.get()) {
-                    transition(job, JobState.CANCELLED, allowFrom = setOf(JobState.QUEUED))
-                    throw java.util.concurrent.CancellationException("Cancelled before start")
+                semaphore.acquire()
+                try {
+                    if (job.cancelFlag.get()) {
+                        transition(job, JobState.CANCELLED, allowFrom = setOf(JobState.QUEUED))
+                        throw java.util.concurrent.CancellationException("Cancelled before start")
+                    }
+                    block()
+                } finally {
+                    semaphore.release()
                 }
-                block()
             } finally {
-                semaphore.release()
+                queuedJobs.decrementAndGet()
             }
         }
     }

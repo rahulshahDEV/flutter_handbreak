@@ -104,6 +104,10 @@ enum VideoPipeline {
             }
             try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration),
                                           of: videoTrack, at: .zero)
+            // Orientation applied EXACTLY ONCE (P1-2):
+            // - no videoComposition → AVFoundation applies the track transform
+            // - videoComposition present → layer instruction owns the transform,
+            //   track transform zeroed (avoid double rotation on resize/fps-cap)
             compVideo.preferredTransform = videoTrack.preferredTransform
 
             // audio per plan: remove → no track; copy/encode → carry source track(s).
@@ -123,9 +127,12 @@ enum VideoPipeline {
             var videoComposition: AVMutableVideoComposition?
             let needsResize = size.width != srcW || size.height != srcH
             if needsResize || limitFrameRate {
+                // Single source of truth for orientation: the layer instruction.
+                compVideo.preferredTransform = .identity
                 let vc = AVMutableVideoComposition()
                 vc.renderSize = CGSize(width: size.width, height: size.height)
-                vc.frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, Int(targetFps))))
+                // Round fractional FPS (29.97→30, 59.94→60) — frameDuration must be integral (P2-5).
+                vc.frameDuration = CMTime(value: 1, timescale: CMTimeScale(max(1, Int(targetFps.rounded()))))
                 let instr = AVMutableVideoCompositionInstruction()
                 instr.timeRange = CMTimeRange(start: .zero, duration: asset.duration)
                 let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideo)

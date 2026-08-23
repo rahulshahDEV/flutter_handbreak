@@ -96,6 +96,16 @@ class OutOfMemoryException extends HandbreakException {
   });
 }
 
+/// Native watchdog/stall timeout — a codec stopped producing/consuming data
+/// and the job was terminated instead of being allowed to hang (P3-1).
+class CompressionTimeoutException extends HandbreakException {
+  const CompressionTimeoutException(
+    super.message, {
+    super.nativeCode,
+    super.nativeMessage,
+  });
+}
+
 /// Map a native error code string to a typed exception.
 HandbreakException mapNativeError(Map<String, dynamic> map) {
   final code = map['code'] as String? ?? 'UNKNOWN';
@@ -142,6 +152,12 @@ HandbreakException mapNativeError(Map<String, dynamic> map) {
       );
     case 'OUT_OF_MEMORY':
       return OutOfMemoryException(
+        msg,
+        nativeCode: code,
+        nativeMessage: nativeMsg,
+      );
+    case 'TIMEOUT':
+      return CompressionTimeoutException(
         msg,
         nativeCode: code,
         nativeMessage: nativeMsg,

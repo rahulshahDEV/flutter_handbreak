@@ -65,3 +65,31 @@ selected encoder.
 - Progressive JPEG not yet supported.
 - Filters beyond scale/crop/rotate/grayscale are validated but no-op until Phase 2.
 - Multiple audio tracks: first track is used; others are ignored (documented behavior).
+- Concurrent jobs: max 1 active + 8 queued; excess jobs fail fast with `QUEUE_FULL`.
+- Images larger than 100 MP without explicit `maxWidth/maxHeight` fail safely
+  with a clear message instead of risking OOM.
+
+## UNVERIFIED on real devices
+
+These behaviors are implemented and statically validated, but this package has no
+physical-device test lane — they must be verified on real hardware before the
+10/10 claim:
+
+1. **iOS orientation** — the single-rotation fix (track transform zeroed when a
+   videoComposition is used) needs A/B verification on 90°/180°/270° + mirrored
+   sources on physical iPhones.
+2. **iOS `usedHardwareAcceleration`** — reports hardware *capability* (Apple's
+   exporter picks its encoder internally); actual HW-vs-SW use per device unproven.
+3. **Android HW encoders per OEM** — MediaCodec behavior varies by vendor
+   (Samsung/Qualcomm/MTK/Pixel); stall watchdogs cover pathological cases but
+   per-OEM encode quality/size variance is unmeasured.
+4. **VFR edge cases** — fractional/VFR sources validated by design, not by
+   fixture runs on devices.
+5. **HDR/10-bit passthrough** — detected in probe; encode-side behavior
+   (tone-map or preserve) is not device-verified.
+6. **Thermal/battery** — default concurrency is conservative (1 active job) but
+   no thermal profiling has been run on physical devices.
+7. **Disk-full mid-encode** — write failures surface as controlled errors; an
+   actual low-storage device run has not been performed.
+8. **Real-media fixture matrix** — MP4/MOV/MKV/WebM/VFR/4K fixtures are defined
+   in the plan but not executed on hardware in CI (no runner).
