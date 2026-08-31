@@ -153,8 +153,9 @@ class _DemoHomeState extends State<DemoHome> {
       final result = await job.result;
       setState(() {
         // ImageCompressor returns CompressionResult as well
+        lastResult = result;
         status =
-            'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved';
+            'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out';
         activeJob = null;
       });
     } catch (e) {
@@ -196,11 +197,14 @@ class _DemoHomeState extends State<DemoHome> {
     try {
       final m = MediaInfo.fromMap(raw);
       final v = m.primaryVideo;
-      if (v == null) return null;
+      final sizeMB = (m.fileSizeBytes / (1024 * 1024)).toStringAsFixed(2);
+      if (v == null) {
+        return 'Output: ${m.container}  $sizeMB MB';
+      }
       final br = v.bitRate > 0
           ? '${(v.bitRate / 1000).toStringAsFixed(0)}kbps'
           : 'n/a';
-      return 'Output: ${v.width}x${v.height} ${v.codec} ${v.frameRate.toStringAsFixed(1)}fps  $br  ${(m.fileSizeBytes / (1024 * 1024)).toStringAsFixed(2)}MB';
+      return 'Output: ${v.width}x${v.height} ${v.codec} ${v.frameRate.toStringAsFixed(1)}fps  $br  $sizeMB MB';
     } catch (_) {
       return null;
     }
