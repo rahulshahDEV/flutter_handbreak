@@ -187,8 +187,15 @@ enum VideoPipeline {
                 vOut.videoComposition = videoComposition
                 videoOutput = vOut
             } else {
-                // Plain track read — compressed samples straight to the writer.
-                videoOutput = AVAssetReaderTrackOutput(track: videoReadTrack, outputSettings: nil)
+                // Decode to raw frames (NV12) — the writer encodes from
+                // uncompressed input; compressed samples are rejected
+                // ("Input buffer must be in an uncompressed format when
+                // outputSettings is not nil"). No renderer involved.
+                videoOutput = AVAssetReaderTrackOutput(
+                    track: videoReadTrack,
+                    outputSettings: [
+                        (kCVPixelBufferPixelFormatTypeKey as String): kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                    ])
             }
             guard reader.canAdd(videoOutput) else {
                 manager.fail(job: job, code: "ENCODING_ERROR", message: "Reader rejected video output")

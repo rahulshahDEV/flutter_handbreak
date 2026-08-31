@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.19 — 2026-08-31 (iOS: decode-to-raw before encode — crash fix)
+
+- **🔴 crash fix**: the no-renderer path fed COMPRESSED samples from the
+  source track into the encoding writer input → NSInvalidArgumentException
+  ("Input buffer must be in an uncompressed format when outputSettings is
+  not nil"). The reader now decodes to raw NV12
+  (`kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange`) — the classic
+  decode → encode pipeline; the writer encodes from uncompressed frames
+  with the plan's explicit bitrate. Audio passthrough stays compressed
+  (writer passthrough input), audio transcode stays PCM → AAC.
+- Swift typecheck + 104/104 Dart tests green.
+
 ## 1.0.18 — 2026-08-31 (iOS: no-renderer common path — 20% stall eliminated)
 
 - **🔴 stall fix**: encodes of rotated videos froze at ~20%. The common path
