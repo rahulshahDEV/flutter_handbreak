@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.12 — 2026-08-31 (Android input-layout fix — corrupt video output)
+
+- **🔴 corrupt-output fix**: the ByteBuffer encode path decided the input
+  layout by comparing the negotiated color format to *planar* (0x13) only.
+  Encoders that negotiate `COLOR_FormatYUV420Flexible` (notably the
+  `c2.android.avc.encoder` software component used by the fallback tier)
+  follow the Android byte-buffer convention of PLANAR I420 — we fed NV12,
+  producing garbled/unusable video. Detection now follows the convention
+  (HandBrake/libx264 also feeds planar): anything that is not explicitly
+  `COLOR_FormatYUV420SemiPlanar` is fed as I420; the negotiated format is
+  logged for diagnostics.
+- Research-backed: Exynos encoders reject CQ (already handled by tiered
+  VBR fallback); vendor VP9/AV1 encoders are documented as distorted/broken
+  on some SoCs.
+- Android JVM tests green.
+
 ## 1.0.11 — 2026-08-31 (preserve-resolution compression)
 
 - **New API**: `VideoCompressionOptions.preserveResolution` — HandBrake-style

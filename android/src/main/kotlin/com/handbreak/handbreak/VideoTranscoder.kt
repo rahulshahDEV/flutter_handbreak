@@ -449,10 +449,16 @@ object VideoTranscoder {
                     throw IllegalStateException("hardwareOnly requested but CPU-path encoder is software-only")
                 }
                 // Read the format the encoder actually negotiated for its input.
+                // ByteBuffer convention (HandBrake/libx264 feeds planar I420):
+                // flexible formats and explicit planar (0x13) mean I420; only an
+                // explicit semi-planar (0x15) contract means NV12. Feeding NV12
+                // into a planar-expecting encoder garbles the video.
                 videoEncPlanar = runCatching {
-                    encoder!!.inputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT) ==
-                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar
-                }.getOrDefault(false)
+                    encoder!!.inputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT) !=
+                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
+                }.getOrDefault(true)
+                android.util.Log.i("HBVideoTranscoder",
+                    "CPU-path encoder input format: ${runCatching { encoder!!.inputFormat }.getOrNull()} planar=$videoEncPlanar")
                 decoder = createVideoDecoder(decMime, forceSoftware).also { d ->
                     d.configure(decFmtIn, null, null, 0)
                     d.start()
