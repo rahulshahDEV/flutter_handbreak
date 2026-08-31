@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.11 — 2026-08-31 (preserve-resolution compression)
+
+- **New API**: `VideoCompressionOptions.preserveResolution` — HandBrake-style
+  "same as source": compresses at the exact source width/height (rotation-
+  corrected), ignoring maxWidth/maxHeight/targetWidth/targetHeight/scale.
+  Size reduction comes from bitrate/CQ alone, never from resizing.
+- **Example app**: "Keep original resolution" toggle (default ON) — video
+  uses `preserveResolution`; image compression drops the 2048 px cap so
+  photos keep their native dimensions (safe: decode guard allows up to
+  100 MP without caps).
+- Tests: `preserveResolution` keeps 4K dimensions despite 720p caps, and
+  portrait rotation-corrected sources stay intact. 100/100 Dart tests green.
+
 ## 1.0.10 — 2026-08-31 (Android CPU-path frame scaling — BufferOverflow fix)
 
 - **🔴 crash fix**: the ByteBuffer encode path fed *full-source-resolution*

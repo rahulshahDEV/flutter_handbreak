@@ -90,6 +90,31 @@ void main() {
       );
       expect(plan.height > plan.width, isTrue);
     });
+    test('preserveResolution keeps source dimensions despite caps', () {
+      final plan = EncodePlanResolver.resolve(
+        info: _info(w: 3840, h: 2160),
+        opts: const VideoCompressionOptions(
+          maxWidth: 1280,
+          maxHeight: 720,
+          preserveResolution: true,
+        ),
+        caps: _caps('android'),
+      );
+      expect(plan.width, 3840);
+      expect(plan.height, 2160);
+    });
+    test('preserveResolution honors rotation-corrected portrait source', () {
+      final plan = EncodePlanResolver.resolve(
+        info: _info(w: 1080, h: 1920),
+        opts: const VideoCompressionOptions(
+          maxWidth: 720,
+          preserveResolution: true,
+        ),
+        caps: _caps('android'),
+      );
+      expect(plan.width, 1080);
+      expect(plan.height, 1920);
+    });
   });
 
   group('EncodePlanResolver — frame rate', () {

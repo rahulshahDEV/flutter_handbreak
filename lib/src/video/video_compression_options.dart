@@ -72,6 +72,7 @@ class VideoCompressionOptions {
     this.scale,
     this.preserveAspectRatio = true,
     this.allowStretch = false,
+    this.preserveResolution = false,
     this.frameRateMode = FrameRateMode.sameAsSource,
     this.maxFrameRate,
     this.constantFrameRate,
@@ -100,6 +101,11 @@ class VideoCompressionOptions {
   final double? scale; // 0.5 = half resolution
   final bool preserveAspectRatio;
   final bool allowStretch;
+
+  /// HandBrake-style "same as source": compress at the source resolution.
+  /// Overrides [maxWidth]/[maxHeight]/[targetWidth]/[targetHeight]/[scale]
+  /// — size-preserving compression only.
+  final bool preserveResolution;
 
   // Frame rate — mirrors job->vrate + cfr flag + correct_framerate logic
   final FrameRateMode frameRateMode;
@@ -163,6 +169,7 @@ class VideoCompressionOptions {
     double? scale,
     bool? preserveAspectRatio,
     bool? allowStretch,
+    bool? preserveResolution,
     FrameRateMode? frameRateMode,
     double? maxFrameRate,
     AudioOptions? audio,
@@ -182,6 +189,7 @@ class VideoCompressionOptions {
         scale: scale ?? this.scale,
         preserveAspectRatio: preserveAspectRatio ?? this.preserveAspectRatio,
         allowStretch: allowStretch ?? this.allowStretch,
+        preserveResolution: preserveResolution ?? this.preserveResolution,
         frameRateMode: frameRateMode ?? this.frameRateMode,
         maxFrameRate: maxFrameRate ?? this.maxFrameRate,
         audio: audio ?? this.audio,
@@ -201,6 +209,7 @@ class VideoCompressionOptions {
         if (scale != null) 'scale': scale,
         'preserveAspectRatio': preserveAspectRatio,
         'allowStretch': allowStretch,
+        'preserveResolution': preserveResolution,
         'frameRateMode': frameRateMode.name,
         if (maxFrameRate != null) 'maxFrameRate': maxFrameRate,
         if (constantFrameRate != null) 'constantFrameRate': constantFrameRate,

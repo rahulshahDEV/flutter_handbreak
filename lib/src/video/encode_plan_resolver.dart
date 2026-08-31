@@ -236,6 +236,7 @@ class EncodePlanResolver {
       scale: opts.scale,
       preserveAspectRatio: opts.preserveAspectRatio,
       allowStretch: opts.allowStretch,
+      preserveResolution: opts.preserveResolution,
     );
 
     // ---- frame rate -------------------------------------------------------
@@ -372,10 +373,16 @@ class EncodePlanResolver {
     double? scale,
     required bool preserveAspectRatio,
     required bool allowStretch,
+    bool preserveResolution = false,
   }) {
     final aspect = srcWidth / srcHeight;
     int w = srcWidth;
     int h = srcHeight;
+    // HandBrake-style "same as source": compress at the source resolution —
+    // no caps, no targets, no scale. Quality/bitrate still do the work.
+    if (preserveResolution) {
+      return (width: _align(srcWidth), height: _align(srcHeight));
+    }
     if (targetWidth != null || targetHeight != null) {
       if (!preserveAspectRatio || allowStretch) {
         w = targetWidth ?? ((targetHeight! * aspect).round());

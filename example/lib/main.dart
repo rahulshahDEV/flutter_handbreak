@@ -34,6 +34,7 @@ class _DemoHomeState extends State<DemoHome> {
   CompressionJob? activeJob;
   String status = 'Pick a video or image to begin';
   VideoPresetId selectedPreset = VideoPresetId.balanced;
+  bool keepOriginalResolution = true;
   bool isProbeLoading = false;
 
   Future<void> pickFile() async {
@@ -92,8 +93,10 @@ class _DemoHomeState extends State<DemoHome> {
   Future<void> compressVideo() async {
     if (inputPath == null) return;
     final opts = selectedPreset.toOptions();
-    // Demonstrate explicit options override: cap at 1080p, hardware auto
-    final resolved = opts.copyWith(maxWidth: 1920, maxHeight: 1080);
+    // Keep original resolution (size-preserving compression) or apply caps.
+    final resolved = keepOriginalResolution
+        ? opts.copyWith(preserveResolution: true)
+        : opts.copyWith(maxWidth: 1920, maxHeight: 1080);
     final out = await _outputPath(inputPath!, '.mp4', selectedPreset.name);
     setState(() {
       status = 'Compressing with ${selectedPreset.displayName} ...';
@@ -140,12 +143,13 @@ class _DemoHomeState extends State<DemoHome> {
     try {
       final job = await ImageCompressor.start(
         inputPath!,
-        options: const ImageCompressionOptions(
-          quality: 82,
-          maxWidth: 2048,
-          maxHeight: 2048,
-          format: ImageFormat.auto,
-        ),
+        options: keepOriginalResolution
+            ? const ImageCompressionOptions(quality: 82)
+            : const ImageCompressionOptions(
+                quality: 82,
+                maxWidth: 2048,
+                maxHeight: 2048,
+              ),
         outputPath: out,
       );
       setState(() => activeJob = job);
@@ -278,6 +282,17 @@ class _DemoHomeState extends State<DemoHome> {
           Text(
             selectedPreset.description,
             style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+          CheckboxListTile(
+            value: keepOriginalResolution,
+            onChanged: (v) => setState(() => keepOriginalResolution = v ?? true),
+            title: const Text('Keep original resolution'),
+            subtitle: const Text(
+              'Compress without resizing (same width & height as source)',
+              style: TextStyle(fontSize: 11),
+            ),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
           ),
           const SizedBox(height: 12),
           Wrap(
