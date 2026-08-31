@@ -124,10 +124,15 @@ enum VideoPipeline {
                 notes.append("Audio removed by request.")
             }
 
-            // ---- video composition for scale / fps cap (preserves orientation transform) ----
-            var videoComposition: AVMutableVideoComposition?
+            // ---- video composition for scale / fps cap / rotation ----
+            // The composition is REQUIRED by AVAssetReaderVideoCompositionOutput
+            // whenever rotation, resize or fps-capping applies — a nil
+            // composition there crashes with NSInternalInconsistencyException.
+            let rotated = videoTrack.preferredTransform != .identity
             let needsResize = size.width != srcW || size.height != srcH
-            if needsResize || limitFrameRate {
+            let needsComposition = needsResize || limitFrameRate || rotated
+            var videoComposition: AVMutableVideoComposition?
+            if needsComposition {
                 // Single source of truth for orientation: the layer instruction.
                 compVideo.preferredTransform = .identity
                 let vc = AVMutableVideoComposition()
@@ -159,8 +164,6 @@ enum VideoPipeline {
             // source). The writer pipeline sets explicit compression properties,
             // mirroring libx264's param pass — the ONLY way to guarantee that
             // same-resolution compression actually produces a smaller file.
-            let rotated = videoTrack.preferredTransform != .identity
-            let needsComposition = needsResize || limitFrameRate || rotated
 
             // Job-scoped temp file — concurrent jobs can never collide (audit P1-1).
             let tmpPath = outputPath + ".hbtmp.\(job.id)"

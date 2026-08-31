@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.16 — 2026-08-31 (iOS crash: composition required for rotated sources)
+
+- **🔴 crash fix**: rotated videos (no resize/fps-cap) crashed with
+  `AVAssetReaderVideoCompositionOutput.videoComposition needs to be set`
+  (NSInternalInconsistencyException) — the video composition was only built
+  for resize/fps-cap, but the reader REQUIRES it whenever the track has a
+  rotation transform. The composition is now built for rotation too
+  (layer instruction carries the transform; renderSize = plan dims).
+- Swift typecheck + 104/104 Dart tests green.
+
 ## 1.0.15 — 2026-08-31 (iOS: explicit reader/writer encode — no more larger files)
 
 - **🔴 iOS never compressed**: `AVAssetExportSession` presets ignore the plan's
