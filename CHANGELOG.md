@@ -1,6 +1,27 @@
 # Changelog
 
-## 1.0.20 — 2026-08-31 (iOS: interleaved pump — the 20% reader deadlock fix)
+## 1.0.21 — 2026-08-31 (iOS concurrent transfers — final 9.7% stall fix)
+
+- **🔴 root cause identified**: the single-threaded pump deadlocked when
+  the audio queue filled while video was being pumped first —
+  `AVAssetReader` stops *all* outputs once any output's bounded queue
+  saturates.
+- **Fix (Apple's official ReaderWriter concurrency pattern)**:
+  - Each reader output now drives its own serial queue via
+    `requestMediaDataWhenReady`.
+  - `AVAssetWriter` interleaves tracks itself — no manual ordering
+    needed.
+  - A `DispatchGroup` waits for all transfers; a per-output
+    `requestMediaDataWhenReady` callback pumps until EOF or stall.
+  - The watchdog is now purely time-based (30 s idle watchdog, 90 s
+    finalize cap) and cancels **both** writer and reader on stall.
+  - Early reader failure detection inside the writer callback avoids
+    lost callbacks.
+- The common path remains decode→encode with rotation as metadata;
+  composition path still handles resize/fps correctly.
+- Swift typecheck + 104/104 Dart tests green.
+
+## 1.0.20 — 2026-08-31 (iOS interleaved pump — 20% freeze fix)
 
 - **🔴 root-cause fix for the 20% freeze**: pumping video-to-completion first
   then audio lets the reader's unconsumed AUDIO output queue fill up —

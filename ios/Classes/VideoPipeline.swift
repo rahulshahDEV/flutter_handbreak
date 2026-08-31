@@ -146,9 +146,12 @@ enum VideoPipeline {
                     var t = CGAffineTransform(translationX: (CGFloat(size.width) - CGFloat(srcW) * s) / 2,
                                               y: (CGFloat(size.height) - CGFloat(srcH) * s) / 2)
                     t = t.scaledBy(x: s, y: s)
-                    layer.setTransform(videoTrack.preferredTransform.concatenating(t), at: .zero)
+                    // Scale storage-oriented pixels only. Rotation remains
+                    // track metadata on the writer, so a portrait source is
+                    // not rotated into a landscape render canvas.
+                    layer.setTransform(t, at: .zero)
                 } else {
-                    layer.setTransform(videoTrack.preferredTransform, at: .zero)
+                    layer.setTransform(.identity, at: .zero)
                 }
                 instr.layerInstructions = [layer]
                 vc.instructions = [instr]
@@ -197,6 +200,7 @@ enum VideoPipeline {
                         (kCVPixelBufferPixelFormatTypeKey as String): kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                     ])
             }
+            videoOutput.alwaysCopiesSampleData = false
             guard reader.canAdd(videoOutput) else {
                 manager.fail(job: job, code: "ENCODING_ERROR", message: "Reader rejected video output")
                 return
@@ -225,11 +229,9 @@ enum VideoPipeline {
             ]
             let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
             videoWriterInput.expectsMediaDataInRealTime = false
-            // Rotation as track metadata (source container style) when the
-            // renderer is not in use — players rotate for display.
-            if !needsComposition {
-                videoWriterInput.transform = videoTrack.preferredTransform
-            }
+            // Rotation as track metadata (source container style) for both
+            // plain and composition paths — players rotate for display.
+            videoWriterInput.transform = videoTrack.preferredTransform
 
             let writer = try AVAssetWriter(outputURL: tmpUrl, fileType: (container == "mov") ? .mov : .mp4)
             guard writer.canAdd(videoWriterInput) else {
@@ -273,45 +275,47 @@ enum VideoPipeline {
                 }
             }
 
-            // ---- interleaved pump (HandBrake sync.c interleaver) ----
-            // CRITICAL: AVAssetReader gives each output a bounded internal
-            // queue. Consuming video first lets the unconsumed AUDIO queue
-            // fill, after which the reader stops delivering to ALL outputs
-            // and the video pump blocks mid-stream (the ~20% freeze). Both
-            // outputs must be drained continuously — video and audio samples
-            // are consumed alternately in one loop.
+            // ---- concurrent transfers (Apple ReaderWriter pattern) ----
+            // AVAssetReader outputs have bounded internal queues. Each output
+            // must be consumed on its own serial queue while AVAssetWriter
+            // interleaves the inputs itself. A manual video-first or fixed
+            // one-video/one-audio loop eventually starves one track and can
+            // deadlock the reader at a repeatable percentage.
             var lastVideoPts = 0.0
+            var lastVideoProgressAt = Date()
             var videoPumpDone = false
             var videoDoneAt = Date()
             let ptsLock = NSLock()
+            let transferLock = NSLock()
+            var transferError: ProbeError?
+            var stalled = false
+
             func record(_ sample: CMSampleBuffer) {
                 let t = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
-                ptsLock.lock(); lastVideoPts = max(lastVideoPts, t); ptsLock.unlock()
+                ptsLock.lock()
+                lastVideoPts = max(lastVideoPts, t)
+                lastVideoProgressAt = Date()
+                ptsLock.unlock()
             }
-            // Fail-fast append: bounded backpressure with writer/reader status
-            // checks — a dead codec must never hang the job (spins ≤ 30 s,
-            // watchdog cancels BOTH writer and reader to unblock the pump).
-            func appendSample(_ sb: CMSampleBuffer, to input: AVAssetWriterInput, trackPts: Bool) throws {
-                var spins = 0
-                if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                while !input.isReadyForMoreMediaData {
-                    if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                    if writer.status == .failed {
-                        throw ProbeError(code: "ENCODING_ERROR",
-                                         message: writer.error?.localizedDescription ?? "Writer failed")
-                    }
-                    if writer.status == .cancelled || reader.status == .failed {
-                        throw ProbeError(code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
-                    }
-                    spins += 1
-                    if spins > 300_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled (30s)") }
-                    usleep(100)
-                }
-                if trackPts { record(sb) }
-                guard input.append(sb) else {
-                    throw ProbeError(code: "ENCODING_ERROR",
-                                     message: "Writer append failed: \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
-                }
+            func readTransferError() -> ProbeError? {
+                transferLock.lock(); defer { transferLock.unlock() }
+                return transferError
+            }
+            func readStalled() -> Bool {
+                transferLock.lock(); defer { transferLock.unlock() }
+                return stalled
+            }
+            func failTransfer(_ error: ProbeError) {
+                transferLock.lock()
+                if transferError == nil { transferError = error }
+                transferLock.unlock()
+                reader.cancelReading()
+                writer.cancelWriting()
+            }
+            func markStalled() {
+                transferLock.lock(); stalled = true; transferLock.unlock()
+                reader.cancelReading()
+                writer.cancelWriting()
             }
 
             guard writer.startWriting() else {
@@ -319,40 +323,39 @@ enum VideoPipeline {
                 return
             }
             writer.startSession(atSourceTime: .zero)
-            reader.startReading()
-
+            guard reader.startReading() else {
+                writer.cancelWriting()
+                manager.fail(job: job, code: "ENCODING_ERROR",
+                             message: reader.error?.localizedDescription ?? "Reader start failed")
+                return
+            }
             job.setTask(writer)
 
-            // Watchdog — two phases:
-            //  video phase: no PTS progress for 30 s ⇒ stall (codec hung).
-            //  audio/finalize phase: video done, writing must finish within 90 s.
-            // On stall cancel BOTH writer and reader so a blocked
-            // copyNextSampleBuffer() unblocks and the pump throws fast.
-            var stalled = false
+            // Watchdog cancels both sides. In particular, cancelling only the
+            // writer does not reliably unblock a reader blocked in
+            // copyNextSampleBuffer().
             let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-            watchdog.schedule(deadline: .now() + 30, repeating: 5)
-            var lastPts = 0.0
+            // Poll frequently so user cancellation is responsive; the stall
+            // threshold itself is measured from the last successfully appended
+            // video sample, not from the previous watchdog tick.
+            watchdog.schedule(deadline: .now() + 1, repeating: 1)
             watchdog.setEventHandler {
-                if job.isCancelled { return }
+                if job.isCancelled {
+                    reader.cancelReading(); writer.cancelWriting()
+                    return
+                }
                 ptsLock.lock()
-                let p = lastVideoPts
                 let vDone = videoPumpDone
                 let doneAt = videoDoneAt
+                let idleSeconds = Date().timeIntervalSince(lastVideoProgressAt)
                 ptsLock.unlock()
                 if writer.status == .writing {
-                    if !vDone {
-                        if p <= lastPts {
-                            stalled = true
-                            writer.cancelWriting()
-                            reader.cancelReading()
-                        }
-                    } else if Date().timeIntervalSince(doneAt) > 90 {
-                        stalled = true
-                        writer.cancelWriting()
-                        reader.cancelReading()
+                    if !vDone, idleSeconds > 30 {
+                        markStalled()
+                    } else if vDone, Date().timeIntervalSince(doneAt) > 90 {
+                        markStalled()
                     }
                 }
-                lastPts = p
                 if writer.status != .writing { watchdog.cancel() }
             }
             watchdog.resume()
@@ -361,70 +364,149 @@ enum VideoPipeline {
                 return durationMs > 0 ? v / (Double(durationMs) / 1000.0) : 0
             }
 
-            do {
-                var videoEof = false
-                var audioEof = [Bool](repeating: false, count: audioPairs.count)
-                while true {
-                    if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                    if videoEof && audioEof.allSatisfy({ $0 }) { break }
-                    if !videoEof {
-                        if let sb = videoOutput.copyNextSampleBuffer() {
-                            try appendSample(sb, to: videoWriterInput, trackPts: true)
-                        } else {
-                            videoEof = true
-                            videoWriterInput.markAsFinished()
-                            ptsLock.lock(); videoPumpDone = true; videoDoneAt = Date(); ptsLock.unlock()
+            let transferGroup = DispatchGroup()
+            func scheduleTransfer(_ output: AVAssetReaderOutput,
+                                  _ input: AVAssetWriterInput,
+                                  isVideo: Bool,
+                                  label: String) {
+                transferGroup.enter()
+                let queue = DispatchQueue(label: label, qos: .userInitiated)
+                var finished = false
+                func finishTransfer() {
+                    guard !finished else { return }
+                    finished = true
+                    input.markAsFinished()
+                    if isVideo {
+                        ptsLock.lock(); videoPumpDone = true; videoDoneAt = Date(); ptsLock.unlock()
+                    }
+                    transferGroup.leave()
+                }
+                input.requestMediaDataWhenReady(on: queue) {
+                    guard !finished else { return }
+                    while input.isReadyForMoreMediaData {
+                        if job.isCancelled {
+                            failTransfer(ProbeError(code: "CANCELLED", message: "Cancelled"))
+                            finishTransfer()
+                            return
                         }
-                    }
-                    for (i, pair) in audioPairs.enumerated() where !audioEof[i] {
-                        if let sb = pair.0.copyNextSampleBuffer() {
-                            try appendSample(sb, to: pair.1, trackPts: false)
-                        } else {
-                            audioEof[i] = true
-                            pair.1.markAsFinished()
+                        if readStalled() {
+                            finishTransfer()
+                            return
                         }
+                        if let error = readTransferError() {
+                            _ = error
+                            finishTransfer()
+                            return
+                        }
+                        if writer.status == .failed {
+                            failTransfer(ProbeError(
+                                code: "ENCODING_ERROR",
+                                message: writer.error?.localizedDescription ?? "Writer failed"))
+                            finishTransfer()
+                            return
+                        }
+                        if reader.status == .failed {
+                            failTransfer(ProbeError(
+                                code: "ENCODING_ERROR",
+                                message: reader.error?.localizedDescription ?? "Reader failed"))
+                            finishTransfer()
+                            return
+                        }
+                        guard let sample = output.copyNextSampleBuffer() else {
+                            if reader.status == .failed {
+                                failTransfer(ProbeError(
+                                    code: "ENCODING_ERROR",
+                                    message: reader.error?.localizedDescription ?? "Reader failed"))
+                            }
+                            finishTransfer()
+                            return
+                        }
+                        guard input.append(sample) else {
+                            failTransfer(ProbeError(
+                                code: "ENCODING_ERROR",
+                                message: "Writer append failed: \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")"))
+                            finishTransfer()
+                            return
+                        }
+                        if isVideo { record(sample) }
+                    }
+                    // When the input is temporarily full, return. AVAssetWriter
+                    // invokes this same block again when it becomes ready.
+                    if job.isCancelled || readStalled() || readTransferError() != nil ||
+                        writer.status == .failed || writer.status == .cancelled ||
+                        reader.status == .failed || reader.status == .cancelled {
+                        finishTransfer()
                     }
                 }
-                if reader.status == .reading {
-                    if job.isCancelled { reader.cancelReading() }
+            }
+
+            scheduleTransfer(videoOutput, videoWriterInput, isVideo: true,
+                             label: "flutter_handbreak.video-transfer")
+            for (index, pair) in audioPairs.enumerated() {
+                scheduleTransfer(pair.0, pair.1, isVideo: false,
+                                 label: "flutter_handbreak.audio-transfer.\(index)")
+            }
+
+            // Wait without imposing a limit on normal long encodes. Once a
+            // cancellation/failure is observed, allow callbacks a short grace
+            // period to leave the group, then fail rather than leak/hang.
+            var transfersFinished = false
+            var abortDeadline: Date?
+            while !transfersFinished {
+                if transferGroup.wait(timeout: .now() + .milliseconds(500)) == .success {
+                    transfersFinished = true
+                    break
                 }
-                writer.finishWriting {
-                    ptsLock.lock(); lastVideoPts = max(lastVideoPts, Double(durationMs) / 1000.0)
-                    ptsLock.unlock()
+                if job.isCancelled || readStalled() || readTransferError() != nil || writer.status == .failed {
+                    reader.cancelReading(); writer.cancelWriting()
+                    if abortDeadline == nil { abortDeadline = Date().addingTimeInterval(5) }
                 }
-                var waitMs = 0
-                while writer.status == .writing {
-                    if job.isCancelled {
-                        writer.cancelWriting()
-                        break
-                    }
-                    if stalled { break }
-                    waitMs += 50
-                    if waitMs > 120_000 { // final safety valve
-                        stalled = true
-                        writer.cancelWriting()
-                        reader.cancelReading()
-                        break
-                    }
-                    usleep(50_000)
-                }
-            } catch let e as ProbeError {
-                try? fm.removeItem(atPath: tmpPath)
-                manager.fail(job: job, code: stalled ? "TIMEOUT" : e.code,
-                             message: stalled ? "Encode stalled: no progress for 30s" : e.message)
+                if let deadline = abortDeadline, Date() >= deadline { break }
+            }
+
+            if !transfersFinished {
                 watchdog.cancel(); ticker.cancel(); job.setTask(nil)
-                return
-            } catch {
                 try? fm.removeItem(atPath: tmpPath)
-                manager.fail(job: job, code: "ENCODING_ERROR", message: error.localizedDescription)
-                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                if readStalled() {
+                    manager.fail(job: job, code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
+                } else if job.isCancelled {
+                    manager.fail(job: job, code: "CANCELLED", message: "Cancelled")
+                } else {
+                    manager.fail(job: job, code: "ENCODING_ERROR",
+                                 message: readTransferError()?.message ?? writer.error?.localizedDescription ?? "Media transfer did not finish")
+                }
                 return
+            }
+
+            if let error = readTransferError() {
+                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: error.code, message: error.message)
+                return
+            }
+            if readStalled() {
+                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
+                return
+            }
+            if job.isCancelled {
+                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: "CANCELLED", message: "Cancelled")
+                return
+            }
+
+            let finishSemaphore = DispatchSemaphore(value: 0)
+            writer.finishWriting { finishSemaphore.signal() }
+            if finishSemaphore.wait(timeout: .now() + 120) == .timedOut {
+                markStalled()
             }
             watchdog.cancel()
             ticker.cancel()
             job.setTask(nil)
 
-            if stalled {
+            if readStalled() {
                 try? fm.removeItem(atPath: tmpPath)
                 manager.fail(job: job, code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
                 return
