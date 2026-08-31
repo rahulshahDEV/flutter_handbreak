@@ -96,7 +96,15 @@ enum ImagePipeline {
         }
 
         if format == "auto" || format.isEmpty {
-            format = hasAlpha ? "png" : "jpeg"
+            // Preserve HEIC efficiency: HEIC source at same resolution re-encoded as JPEG
+            // at quality 82 is often LARGER than the original (HEIC ~50% smaller than JPEG).
+            // Keep HEIC when the source is HEIC and the device can write it.
+            let sourceUTI = CGImageSourceGetType(source) as String?
+            if sourceUTI == "public.heic" && !hasAlpha && destinationTypeAvailable("public.heic") {
+                format = "heic"
+            } else {
+                format = hasAlpha ? "png" : "jpeg"
+            }
         }
         // Honesty (audit P1-7 parity): if the requested format cannot be written
         // by this device, fall back to JPEG AND report it with a warning — never

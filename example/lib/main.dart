@@ -161,7 +161,7 @@ class _DemoHomeState extends State<DemoHome> {
     return 'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out, hw=${result.usedHardwareAcceleration}';
   }
 
-  Future<void> compressImage() async {
+Future<void> compressImage() async {
     if (inputPath == null) return;
     final out = await _outputPath(inputPath!, '.jpg', 'image');
     setState(() => status = 'Compressing image ...');
@@ -169,7 +169,10 @@ class _DemoHomeState extends State<DemoHome> {
       final job = await ImageCompressor.start(
         inputPath!,
         options: keepOriginalResolution
-            ? const ImageCompressionOptions(quality: 82)
+            ? const ImageCompressionOptions(
+                quality: 62, // Lower quality for full-res to guarantee savings vs efficient HEIC source
+                format: ImageFormat.auto,
+              )
             : const ImageCompressionOptions(
                 quality: 82,
                 maxWidth: 2048,
@@ -184,7 +187,7 @@ class _DemoHomeState extends State<DemoHome> {
         // ImageCompressor returns CompressionResult as well
         lastResult = result;
         status = result.wasKeptOriginal
-            ? 'Kept original — recompressed output would be larger (source may be HEIC or already compressed)'
+            ? 'Kept original — compressed output would be larger (source already efficient)'
             : 'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out';
         activeJob = null;
       });
