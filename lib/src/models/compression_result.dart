@@ -64,7 +64,9 @@ class CompressionResult {
             m['usedHardwareAcceleration'] as bool? ?? false,
         codec: m['codec'] as String? ?? 'h264',
         container: m['container'] as String? ?? 'mp4',
-        outputMediaInfo: m['outputMediaInfo'] as Map<String, dynamic>?,
+        outputMediaInfo: m['outputMediaInfo'] == null
+            ? null
+            : Map<String, dynamic>.from(m['outputMediaInfo'] as Map),
         estimatedOutputSizeBytes: m['estimatedOutputSizeBytes'] as int?,
         qualityWarning: m['qualityWarning'] as String?,
         wasKeptOriginal: m['wasKeptOriginal'] as bool? ?? false,

@@ -101,6 +101,58 @@ void main() {
       });
       expect(r.wasKeptOriginal, true);
     });
+    test('fromMap accepts channel-decoded nested maps', () {
+      // Method-channel decoding yields Map<Object?, Object?> for nested maps;
+      // the strict `as Map<String, dynamic>` cast used to throw TypeError.
+      final r = CompressionResult.fromMap(<String, dynamic>{
+        'inputPath': '/a.mp4',
+        'outputPath': '/b.mp4',
+        'originalSizeBytes': 1000000,
+        'outputSizeBytes': 400000,
+        'savedBytes': 600000,
+        'compressionRatio': 2.5,
+        'compressionPercentage': 60.0,
+        'durationMs': 1200,
+        'usedHardwareAcceleration': true,
+        'codec': 'h264',
+        'container': 'mp4',
+        'outputMediaInfo': <Object?, Object?>{
+          'path': '/b.mp4',
+          'container': 'mp4',
+          'durationMs': 9990,
+          'fileSizeBytes': 400000,
+          'overallBitrate': 320000,
+          'videoStreams': <Object?>[
+            <Object?, Object?>{
+              'index': 0,
+              'codec': 'h264',
+              'codecString': 'video/avc',
+              'width': 1920,
+              'height': 1080,
+              'rotation': 0,
+              'frameRate': 30.0,
+              'averageFrameRate': 30.0,
+              'isVariableFrameRate': false,
+              'durationMs': 9990,
+              'bitRate': 320000,
+              'pixelFormat': 'yuv420p',
+              'colorPrimaries': 'bt709',
+              'colorTransfer': 'bt709',
+              'colorMatrix': 'bt709',
+              'colorRange': 'limited',
+              'bitDepth': 8,
+              'isHdr': false,
+              'displayAspectRatio': 1.77,
+              'sampleAspectRatio': 1.0,
+            },
+          ],
+          'audioStreams': <Object?>[],
+          'metadata': <Object?, Object?>{},
+        },
+      });
+      expect(r.outputMediaInfo, isNotNull);
+      expect(r.outputMediaInfo!['durationMs'], 9990);
+    });
   });
 
   group('HandbreakException mapping', () {

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.5 — 2026-08-31 (channel map cast fix)
+
+- **🔴 crash fix**: `CompressionResult.fromMap` cast
+  `m['outputMediaInfo'] as Map<String, dynamic>?` threw
+  `Map<Object?, Object?> is not a subtype of Map<String, dynamic>` — the
+  method channel decodes nested maps as `Map<Object?, Object?>`, and a strict
+  cast on the runtime type fails. Now converted with the same
+  `Map<String, dynamic>.from(...)` pattern used elsewhere; no other strict
+  `as Map<String, ...>` casts remain in the library.
+- Regression test: `CompressionResult.fromMap accepts channel-decoded nested
+  maps` reproduces the exact native payload shape.
+- 95/95 Dart unit tests green, analyze clean.
+
 ## 1.0.4 — 2026-08-31 (real-world input hardening)
 
 - **🔴 rotation from container metadata**: `KEY_ROTATION` is frequently absent
