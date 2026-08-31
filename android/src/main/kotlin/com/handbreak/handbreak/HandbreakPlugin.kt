@@ -105,10 +105,10 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                         mainHandler.post { result.success(mapOf("error" to mapOf("code" to "CANCELLED", "message" to "Cancelled"))) }
                     } catch (e: java.util.concurrent.ExecutionException) {
                         val cause = e.cause
-                        val errMap = mapOf("code" to mapErrorCode(cause), "message" to (cause?.message ?: "Unknown error"))
+                        val errMap = mapOf("code" to mapErrorCode(cause), "message" to describe(cause))
                         mainHandler.post { result.success(mapOf("error" to errMap)) }
                     } catch (e: Exception) {
-                        mainHandler.post { result.error("ENCODING_ERROR", e.message, null) }
+                        mainHandler.post { result.error("ENCODING_ERROR", describe(e), null) }
                     }
                 }
             }
@@ -174,7 +174,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw java.util.concurrent.CancellationException("Cancelled")
             } catch (e: VideoTranscoder.StallException) {
                 jobManager.markFailed(job.id)
-                val err = mapOf("code" to "TIMEOUT", "message" to (e.message ?: "Encoder stalled"))
+                val err = mapOf("code" to "TIMEOUT", "message" to describe(e))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
@@ -182,7 +182,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw e
             } catch (e: IllegalArgumentException) {
                 jobManager.markFailed(job.id)
-                val err = mapOf("code" to "INVALID_INPUT", "message" to (e.message ?: "Invalid input"))
+                val err = mapOf("code" to "INVALID_INPUT", "message" to describe(e))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
@@ -191,7 +191,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             } catch (e: IllegalStateException) {
                 jobManager.markFailed(job.id)
                 val code = if (e.message?.contains("Hardware", true) == true) "HARDWARE_UNAVAILABLE" else "ENCODING_ERROR"
-                val err = mapOf("code" to code, "message" to (e.message ?: "Encoding failed"))
+                val err = mapOf("code" to code, "message" to describe(e))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
@@ -199,7 +199,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw e
             } catch (e: Exception) {
                 jobManager.markFailed(job.id)
-                val err = mapOf("code" to "ENCODING_ERROR", "message" to (e.message ?: "Unknown"))
+                val err = mapOf("code" to "ENCODING_ERROR", "message" to describe(e))
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
@@ -240,7 +240,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 throw java.util.concurrent.CancellationException("Cancelled")
             } catch (e: Exception) {
                 jobManager.markFailed(job.id)
-                val err = mapOf("code" to mapErrorCode(e), "message" to (e.message ?: "Unknown"))
+                val err = mapOf("code" to mapErrorCode(e), "message" to describe(e))
                 jobErrors[job.id] = err; postProgress(job.id, mapOf("error" to err)); closeProgress(job.id)
                 throw e
             }
@@ -301,5 +301,16 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         is IllegalStateException -> if (e.message?.contains("Hardware", true) == true) "HARDWARE_UNAVAILABLE" else "ENCODING_ERROR"
         is java.util.concurrent.CancellationException -> "CANCELLED"
         else -> "ENCODING_ERROR"
+    }
+
+    /** Self-describing error: "Unknown error" hides the cause — always include
+     *  the exception class and the first stack frame. */
+    private fun describe(e: Throwable?): String {
+        if (e == null) return "Unknown error"
+        val msg = e.message?.take(200) ?: "(no message)"
+        val frame = e.stackTrace.firstOrNull()
+            ?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+            ?: "?"
+        return "${e.javaClass.simpleName}: $msg @ $frame"
     }
 }

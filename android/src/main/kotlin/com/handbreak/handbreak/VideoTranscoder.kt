@@ -3,6 +3,7 @@ package com.handbreak.handbreak
 import android.media.Image
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
@@ -159,19 +160,42 @@ object VideoTranscoder {
         jobManager: JobManager,
         onProgress: (Map<String, Any?>) -> Unit,
     ): Map<String, Any?> {
-        try {
-            return transcodeImpl(inputPath, outputPath, optsRaw, jobId, jobManager, onProgress,
-                allowCq = true, forceCpuPath = false)
-        } catch (e: MediaCodec.CodecException) {
-            // Runtime codec death (e.g. "Error 0x80001001" buffer-manager error) is
-            // device/encoder-specific — never fail the job on the first attempt.
-            // Retry once fully degraded: VBR (no CQ, no KEY_QUALITY) + ByteBuffer
-            // YUV input (no surface). This path avoids both known
-            // breakers: surface+CQ pipelines and strict c2 KEY_QUALITY handling.
-            android.util.Log.w("HBVideoTranscoder", "Primary path died with CodecException — retrying degraded (ByteBuffer/VBR)", e)
-            return transcodeImpl(inputPath, outputPath, optsRaw, jobId, jobManager, onProgress,
-                allowCq = false, forceCpuPath = true)
+        // Tiered encode — HandBrake-style "always produce a result":
+        //  Tier 0: CQ + Surface input (vendor/HW encoder preferred).
+        //  Tier 1: VBR + ByteBuffer YUV (no CQ/KEY_QUALITY, no surface) — some
+        //          devices reject surface/CQ at configure or mid-encode.
+        //  Tier 2: VBR + ByteBuffer + FORCED software encoder/decoder
+        //          (c2.android/OMX.google) — always available, always works.
+        // Input-level failures (bad paths, no video track, truncated media)
+        // and cancellation/stall/validation never retry — deterministic.
+        var tier = 0
+        while (tier < 3) {
+            try {
+                return transcodeImpl(inputPath, outputPath,
+                    if (tier >= 2) degradeCodec(optsRaw) else optsRaw,
+                    jobId, jobManager, onProgress,
+                    allowCq = tier == 0, forceCpuPath = tier >= 1, forceSoftware = tier >= 2)
+            } catch (e: Exception) {
+                if (!retryable(e) || tier >= 2) throw e
+                tier++
+                android.util.Log.w("HBVideoTranscoder", "Tier ${tier - 1} failed (${e.javaClass.simpleName}: ${e.message}) — retrying tier $tier", e)
+            }
         }
+        throw IllegalStateException("Unreachable")
+    }
+
+    private fun retryable(e: Exception): Boolean = when (e) {
+        is CancellationException, is StallException, is OutputValidationException,
+        is IllegalArgumentException -> false
+        else -> true
+    }
+
+    /** Tier-2: if the requested codec has no software encoder (e.g. AV1 on older
+     *  devices), fall back to H.264 — software H.264 exists on every device. */
+    private fun degradeCodec(optsRaw: Map<String, Any>): Map<String, Any> {
+        val codec = ((optsRaw["codec"] as? String) ?: "h264").lowercase()
+        if (softwareCodecName(mimeFor(codec), encoder = true) != null) return optsRaw
+        return optsRaw + ("codec" to "h264")
     }
 
     private fun transcodeImpl(
@@ -183,6 +207,7 @@ object VideoTranscoder {
         onProgress: (Map<String, Any?>) -> Unit,
         allowCq: Boolean,
         forceCpuPath: Boolean,
+        forceSoftware: Boolean,
     ): Map<String, Any?> {
         val startMs = System.currentTimeMillis()
         val opts = Options(optsRaw)
@@ -301,7 +326,7 @@ object VideoTranscoder {
             var lastErr: Exception? = null
             if (forceCpuPath) {
                 try {
-                    val enc = MediaCodec.createEncoderByType(mime)
+                    val enc = createVideoEncoder(mime, forceSoftware)
                     enc.configure(
                         buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = allowCq),
                         null, null, MediaCodec.CONFIGURE_FLAG_ENCODE,
@@ -324,7 +349,7 @@ object VideoTranscoder {
                     checkCancel(jobManager, jobId)
                     if (!encCreated) {
                         try {
-                            val enc = MediaCodec.createEncoderByType(mime)
+                            val enc = createVideoEncoder(mime, forceSoftware)
                             val fmt = buildEncoderFmt(null, allowCq = allowCq && attempt == 0) // null color ⇒ Surface mode
                             enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                             val surface = enc.createInputSurface()
@@ -395,7 +420,7 @@ object VideoTranscoder {
             var decoderCandidate: MediaCodec? = null
             if (!forceCpuPath) {
                 surfaceMode = try {
-                    decoderCandidate = MediaCodec.createDecoderByType(decMime)
+                    decoderCandidate = createVideoDecoder(decMime, forceSoftware)
                     decoderCandidate!!.configure(decFmtIn, encoderSurface, null, 0)
                     decoderCandidate!!.start()
                     decoder = decoderCandidate
@@ -414,7 +439,7 @@ object VideoTranscoder {
                     runCatching { encoder?.stop(); encoder?.release() }
                     runCatching { encoderSurface?.release() }
                     encoder = null; encoderSurface = null
-                    encoder = MediaCodec.createEncoderByType(mime).also { e ->
+                    encoder = createVideoEncoder(mime, forceSoftware).also { e ->
                         e.configure(buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = allowCq), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                         e.start()
                     }
@@ -428,7 +453,7 @@ object VideoTranscoder {
                     encoder!!.inputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT) ==
                         MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar
                 }.getOrDefault(false)
-                decoder = MediaCodec.createDecoderByType(decMime).also { d ->
+                decoder = createVideoDecoder(decMime, forceSoftware).also { d ->
                     d.configure(decFmtIn, null, null, 0)
                     d.start()
                 }
@@ -833,6 +858,39 @@ object VideoTranscoder {
         "av1", "av01" -> "video/av01"
         "vp9" -> "video/x-vnd.on2.vp9"
         else -> MediaFormat.MIMETYPE_VIDEO_AVC
+    }
+
+    /** Name of a software codec for [mime] (c2.android/OMX.google), or null. */
+    private fun softwareCodecName(mime: String, encoder: Boolean): String? {
+        val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+        for (info in list.codecInfos) {
+            if (info.isEncoder != encoder) continue
+            val types = runCatching { info.supportedTypes }.getOrDefault(arrayOf())
+            if (mime !in types) continue
+            val sw = if (Build.VERSION.SDK_INT >= 29) {
+                runCatching { info.isSoftwareOnly }.getOrDefault(info.name.startsWith("OMX.google."))
+            } else info.name.startsWith("OMX.google.")
+            if (sw) return info.name
+        }
+        return null
+    }
+
+    private fun createVideoEncoder(mime: String, forceSoftware: Boolean): MediaCodec {
+        if (forceSoftware) {
+            val name = softwareCodecName(mime, encoder = true)
+                ?: throw IllegalStateException("No software encoder available for $mime")
+            return MediaCodec.createByCodecName(name)
+        }
+        return MediaCodec.createEncoderByType(mime)
+    }
+
+    private fun createVideoDecoder(mime: String, forceSoftware: Boolean): MediaCodec {
+        if (forceSoftware) {
+            val name = softwareCodecName(mime, encoder = false)
+                ?: throw IllegalStateException("No software decoder available for $mime")
+            return MediaCodec.createByCodecName(name)
+        }
+        return MediaCodec.createDecoderByType(mime)
     }
 
     private fun resolveTargetBitrate(

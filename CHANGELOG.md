@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.9 — 2026-08-31 (Android 3-tier encode fallback + self-describing errors)
+
+- **Tiered encode pipeline** (HandBrake-style "always produce a result"):
+  - Tier 0: CQ + Surface input (vendor/HW encoder preferred).
+  - Tier 1: VBR + ByteBuffer YUV — no CQ/KEY_QUALITY, no input surface.
+  - Tier 2: VBR + ByteBuffer + **forced software encoder/decoder**
+    (`c2.android`/`OMX.google`) — always present, cannot be broken by vendor
+    codec bugs; AV1 falls back to H.264 software when no AV1 software encoder
+    exists.
+  - Retries on ANY codec-side failure (CodecException, IllegalStateException,
+    NPE, …); deterministic input failures (bad path, no track, truncated
+    media), cancellation, stalls and validation errors never retry.
+- **Self-describing errors**: `Unknown error` replaced with
+  `ExceptionClass: message @ File.method:line` across every native error path
+  — the next failure, if any, is immediately diagnosable.
+- Android JVM tests green, AAR builds (zero `.so`), analyze clean.
+
 ## 1.0.8 — 2026-08-31 (Android YUV conversion crash + negotiated-format fix)
 
 - **🔴 crash fix**: `Yuv.toNv12` threw `BufferUnderflowException` on Exynos
