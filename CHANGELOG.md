@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.8 — 2026-08-31 (Android YUV conversion crash + negotiated-format fix)
+
+- **🔴 crash fix**: `Yuv.toNv12` threw `BufferUnderflowException` on Exynos
+  devices (HEVC decode → ByteBuffer encode). Decoder `Image` planes violate
+  naive assumptions: shared backing buffers with non-zero base position,
+  restrictive limits, vendor-specific interleave order (NV21) and strides.
+  The converter is now fully defensive — base-offset aware, bounds-clamped
+  (never throws on odd geometry), detects NV12/NV21/planar layouts, and
+  down-converts 10-bit (16-bit) chroma to 8-bit.
+- **🔴 quality fix**: the encoder is queried for its *negotiated* input color
+  format; when a vendor substitutes planar (e.g. `0x13`) for our flexible
+  request, frames are fed as I420 instead of NV12 — previously the layout
+  mismatch produced scrambled chroma.
+- Verified against device logs: surface encode rejected by `OMX.Exynos.AVC.
+  Encoder` (configure -38) → degraded ByteBuffer path now completes.
+- Android JVM tests green.
+
 ## 1.0.7 — 2026-08-31 (Android encode runtime-crash retry)
 
 - **🔴 Android**: a runtime `MediaCodec.CodecException` (e.g. `Error 0x80001001`

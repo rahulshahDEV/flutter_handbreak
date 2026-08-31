@@ -166,8 +166,9 @@ object VideoTranscoder {
             // Runtime codec death (e.g. "Error 0x80001001" buffer-manager error) is
             // device/encoder-specific — never fail the job on the first attempt.
             // Retry once fully degraded: VBR (no CQ, no KEY_QUALITY) + ByteBuffer
-            // YUV input (no input surface). This path avoids both known
+            // YUV input (no surface). This path avoids both known
             // breakers: surface+CQ pipelines and strict c2 KEY_QUALITY handling.
+            android.util.Log.w("HBVideoTranscoder", "Primary path died with CodecException — retrying degraded (ByteBuffer/VBR)", e)
             return transcodeImpl(inputPath, outputPath, optsRaw, jobId, jobManager, onProgress,
                 allowCq = false, forceCpuPath = true)
         }
@@ -257,6 +258,10 @@ object VideoTranscoder {
         var muxer: MediaMuxer? = null
         var muxerStarted = false
         var usedHw = false
+        // Negotiated encoder input layout (CPU path only). Exynos & other
+        // vendors substitute a concrete format (e.g. 0x13 planar) for our
+        // COLOR_FormatYUV420Flexible request — we must feed what was negotiated.
+        var videoEncPlanar = false
 
         try {
             fun buildEncoderFmt(colorFormat: Int?, allowCq: Boolean): MediaFormat =
@@ -418,6 +423,11 @@ object VideoTranscoder {
                 if (!usedHw && requireHw) {
                     throw IllegalStateException("hardwareOnly requested but CPU-path encoder is software-only")
                 }
+                // Read the format the encoder actually negotiated for its input.
+                videoEncPlanar = runCatching {
+                    encoder!!.inputFormat.getInteger(MediaFormat.KEY_COLOR_FORMAT) ==
+                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420PackedPlanar
+                }.getOrDefault(false)
                 decoder = MediaCodec.createDecoderByType(decMime).also { d ->
                     d.configure(decFmtIn, null, null, 0)
                     d.start()
@@ -551,7 +561,7 @@ object VideoTranscoder {
                                 } else {
                                     val img: Image? = decoder!!.getOutputImage(outIdx)
                                     if (img != null) {
-                                        val nv12 = Yuv.toNv12(img)
+                                        val nv12 = Yuv.toNv12(img, planarOut = videoEncPlanar)
                                         img.close()
                                         feedEncoderNv12(encoder!!, nv12, decInfo.presentationTimeUs, timeoutUs, jobManager, jobId)
                                         decoder!!.releaseOutputBuffer(outIdx, false)
@@ -971,66 +981,152 @@ object VideoTranscoder {
         else requested
 }
 
-/** YUV_420_888 Image → tightly-packed NV12 (fast paths; correct for both semi/planar layouts). */
+/**
+ * YUV_420_888 → tightly-packed 8-bit YUV (NV12 semi-planar, or I420 planar
+ * when the encoder negotiated a planar input).
+ *
+ * Defensive — real-world decoder images violate naive assumptions:
+ * - planes may share one backing allocation with a non-zero base position
+ *   (all indexing is relative to the plane's own buffer position);
+ * - chroma may be NV12 (U,V) or NV21 (V,U) interleaved, or fully planar;
+ * - some vendors use 16-bit (10-bit) samples with pixelStride 2;
+ * - truncated/odd-strided rows must clamp instead of throwing
+ *   (BufferUnderflowException crashed jobs on Exynos).
+ */
 internal object Yuv {
-    fun toNv12(img: Image): ByteArray {
+    fun toNv12(img: Image, planarOut: Boolean = false): ByteArray {
         require(img.format == android.graphics.ImageFormat.YUV_420_888)
         val w = img.width
         val h = img.height
         val yP = img.planes[0]
         val uP = img.planes[1]
         val vP = img.planes[2]
-
         val out = ByteArray(w * h * 3 / 2)
         var pos = 0
 
-        // --- Y ---
-        val yb = yP.buffer
-        if (yP.pixelStride == 1 && yP.rowStride == w) {
-            yb.position(0)
-            yb.get(out, pos, w * h)
-            pos += w * h
+        // ---------- Y (planar luminance, padded rows allowed) ----------
+        val yBuf = yP.buffer
+        val yBase = yP.buffer.position()
+        val yCap = yP.buffer.capacity()
+        val yStride = yP.rowStride.coerceAtLeast(w)
+        val yRows = minOf(h, if (yStride > 0) (yCap - yBase) / yStride else 0)
+        if (yP.pixelStride == 1) {
+            for (r in 0 until yRows) {
+                val rowBytes = minOf(w, yCap - yBase - r * yStride)
+                if (rowBytes <= 0) break
+                val dup = yBuf.duplicate()
+                dup.position(yBase + r * yStride)
+                dup.limit(minOf(dup.capacity(), yBase + r * yStride + rowBytes))
+                dup.get(out, pos, rowBytes)
+                pos += rowBytes
+            }
         } else {
-            for (row in 0 until h) {
-                val base = row * yP.rowStride
-                if (yP.pixelStride == 1) {
-                    yb.position(base)
-                    yb.get(out, pos, w)
-                    pos += w
-                } else {
-                    for (col in 0 until w) out[pos++] = yb.get(base + col * yP.pixelStride)
+            for (r in 0 until yRows) {
+                val rb = yBase + r * yStride
+                for (c in 0 until w) {
+                    val idx = rb + c * yP.pixelStride
+                    out[pos++] = if (idx < yCap) yBuf.get(idx) else 0
                 }
             }
         }
 
-        // --- Chroma ---
+        // ---------- chroma ----------
         val ch = h / 2
         val cw = w / 2
-        when {
-            uP.pixelStride == 2 -> {
-                // Semi-planar: U plane rows are U0V0U1V1… (NV12 native layout).
-                for (row in 0 until ch) {
-                    val ub = uP.buffer.duplicate()
-                    ub.position(row * uP.rowStride)
-                    ub.get(out, pos, cw * 2)
-                    pos += cw * 2
+        // Which plane is the interleaved one (pixelStride 2)? NV12 = U,V; NV21 = V,U.
+        val interleaved: Image.Plane? = when {
+            uP.pixelStride == 2 -> uP
+            vP.pixelStride == 2 -> vP
+            else -> null
+        }
+        val uvOrder = interleaved === uP
+
+        fun chromaSample(buf: java.nio.ByteBuffer, base: Int, cap: Int, idx: Int, tenBit: Boolean): Int {
+            if (idx < 0 || idx + (if (tenBit) 1 else 0) >= cap) return 0
+            val lo = buf.get(base + idx).toInt() and 0xFF
+            return if (tenBit) {
+                val hi = buf.get(base + idx + 1).toInt() and 0xFF
+                ((hi and 0x03) shl 6) or (lo shr 2) // 10-bit LE → 8-bit
+            } else lo
+        }
+
+        if (interleaved != null) {
+            val cb = interleaved.buffer
+            val cBase = interleaved.buffer.position()
+            val cCap = interleaved.buffer.capacity()
+            val cStride = interleaved.rowStride.coerceAtLeast(cw * 2)
+            val tenBit = interleaved.rowStride >= cw * 4 // 16-bit samples per pixel
+            val cRows = minOf(ch, if (cStride > 0) (cCap - cBase) / cStride else 0)
+            if (planarOut) {
+                // I420: write the U block fully, then the V block (deinterleave).
+                for (pass in 0..1) {
+                    for (r in 0 until cRows) {
+                        val rb = cBase + r * cStride
+                        val rowBytes = minOf(cStride, cCap - rb)
+                        val samples = minOf(cw * 2, rowBytes / (if (tenBit) 2 else 1))
+                        for (s in 0 until samples) {
+                            // NV12: s even = U, s odd = V. NV21: reversed.
+                            val isU = if (uvOrder) s % 2 == 0 else s % 2 == 1
+                            if (isU == (pass == 0)) {
+                                out[pos++] = chromaSample(cb, rb, cCap, s, tenBit).toByte()
+                            }
+                        }
+                    }
+                }
+            } else {
+                for (r in 0 until cRows) {
+                    val rb = cBase + r * cStride
+                    val rowBytes = minOf(cStride, cCap - rb)
+                    val samples = minOf(cw * 2, rowBytes / (if (tenBit) 2 else 1))
+                    var swap = 0
+                    var pending = false
+                    for (s in 0 until samples) {
+                        val v = chromaSample(cb, rb, cCap, s, tenBit)
+                        if (uvOrder) {
+                            out[pos++] = v.toByte()
+                        } else if (!pending) {
+                            swap = v; pending = true
+                        } else {
+                            out[pos++] = v.toByte() // V
+                            out[pos++] = swap.toByte() // U (NV21 → NV12 swap)
+                            pending = false
+                        }
+                    }
                 }
             }
-            else -> {
-                // Planar: interleave U and V sample-by-sample.
-                for (row in 0 until ch) {
-                    val ub = uP.buffer
-                    val vb = vP.buffer
-                    val uBase = row * uP.rowStride
-                    val vBase = row * vP.rowStride
-                    for (col in 0 until cw) {
-                        out[pos++] = ub.get(uBase + col * uP.pixelStride)
-                        out[pos++] = vb.get(vBase + col * vP.pixelStride)
+        } else {
+            // Fully planar U and V planes — interleave, clamped per sample.
+            val ub = uP.buffer
+            val vb = vP.buffer
+            val uBase = uP.buffer.position()
+            val vBase = vP.buffer.position()
+            val uCap = uP.buffer.capacity()
+            val vCap = vP.buffer.capacity()
+            if (planarOut) {
+                for (r in 0 until ch) {
+                    for (c in 0 until cw) {
+                        val ui = uBase + r * uP.rowStride + c * uP.pixelStride
+                        out[pos++] = if (ui < uCap) ub.get(ui) else 0
+                    }
+                }
+                for (r in 0 until ch) {
+                    for (c in 0 until cw) {
+                        val vi = vBase + r * vP.rowStride + c * vP.pixelStride
+                        out[pos++] = if (vi < vCap) vb.get(vi) else 0
+                    }
+                }
+            } else {
+                for (r in 0 until ch) {
+                    for (c in 0 until cw) {
+                        val ui = uBase + r * uP.rowStride + c * uP.pixelStride
+                        val vi = vBase + r * vP.rowStride + c * vP.pixelStride
+                        out[pos++] = if (ui < uCap) ub.get(ui) else 0
+                        out[pos++] = if (vi < vCap) vb.get(vi) else 0
                     }
                 }
             }
         }
-        return out
+        return if (pos == out.size) out else out.copyOf(pos)
     }
 }
 

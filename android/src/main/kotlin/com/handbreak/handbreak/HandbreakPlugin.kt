@@ -2,6 +2,7 @@ package com.handbreak.handbreak
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -23,6 +24,8 @@ import java.util.concurrent.Executors
  * Large media never crosses the channel — only paths + option maps + progress ticks.
  */
 class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+
+    companion object { private const val TAG = "HandbreakPlugin" }
 
     private lateinit var methodChannel: MethodChannel
     private var flutterPluginBinding: FlutterPlugin.FlutterPluginBinding? = null
@@ -175,6 +178,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
+                Log.e(TAG, "Video job ${job.id} stalled", e)
                 throw e
             } catch (e: IllegalArgumentException) {
                 jobManager.markFailed(job.id)
@@ -182,6 +186,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
+                Log.e(TAG, "Video job ${job.id} invalid input", e)
                 throw e
             } catch (e: IllegalStateException) {
                 jobManager.markFailed(job.id)
@@ -190,6 +195,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
+                Log.e(TAG, "Video job ${job.id} failed (illegal state)", e)
                 throw e
             } catch (e: Exception) {
                 jobManager.markFailed(job.id)
@@ -197,6 +203,7 @@ class HandbreakPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 jobErrors[job.id] = err
                 postProgress(job.id, mapOf("error" to err))
                 closeProgress(job.id)
+                Log.e(TAG, "Video job ${job.id} failed", e)
                 throw e
             }
         }
