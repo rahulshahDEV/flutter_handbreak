@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_handbreak/handbreak.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() => runApp(const HandbreakDemoApp());
@@ -37,6 +38,16 @@ class _DemoHomeState extends State<DemoHome> {
     final res = await FilePicker.platform.pickFiles(type: FileType.any);
     if (res == null || res.files.single.path == null) return;
     final path = res.files.single.path!;
+    await _onPicked(path);
+  }
+
+  Future<void> pickFromCameraRoll() async {
+    final file = await ImagePicker().pickVideo(source: ImageSource.gallery);
+    if (file == null) return;
+    await _onPicked(file.path);
+  }
+
+  Future<void> _onPicked(String path) async {
     setState(() {
       inputPath = path;
       mediaInfo = null;
@@ -156,7 +167,13 @@ class _DemoHomeState extends State<DemoHome> {
           FilledButton.icon(
             onPressed: pickFile,
             icon: const Icon(Icons.file_open),
-            label: const Text('Pick Video / Image'),
+            label: const Text('Pick Video / Image (Files)'),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            onPressed: pickFromCameraRoll,
+            icon: const Icon(Icons.photo_library),
+            label: const Text('Pick Video from Camera Roll'),
           ),
           const SizedBox(height: 12),
           if (inputPath != null)

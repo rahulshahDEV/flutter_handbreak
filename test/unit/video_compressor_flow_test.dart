@@ -201,7 +201,9 @@ void main() {
       );
       await job.cancel();
       await expectLater(
-          job.result, throwsA(isA<CancelledCompressionException>()),);
+        job.result,
+        throwsA(isA<CancelledCompressionException>()),
+      );
     });
 
     test('compress() disposes the job after result', () async {

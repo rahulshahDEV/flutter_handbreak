@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.4 — 2026-08-31 (real-world input hardening)
+
+- **🔴 rotation from container metadata**: `KEY_ROTATION` is frequently absent
+  from Android `MediaExtractor` output (esp. HEVC / MOV); the probe now falls
+  back to `MediaMetadataRetriever`'s rotation (tkhd matrix) so portrait
+  detection & dimension swap work on camera-roll files.
+- **🔴 truncated-input guard**: moov-fronted files parse cleanly even when the
+  media data is cut short — the probe now compares the last sample PTS
+  against the declared duration and throws `InvalidInput` instead of silently
+  reporting a full-length file.
+- **🔴 CQ encode fix**: strict c2 codecs reject `BITRATE_MODE_CQ` configs
+  without `KEY_QUALITY` (EINVAL); the transcoder now sets `KEY_QUALITY`
+  derived from the resolved CRF, and retries with plain VBR if a device
+  refuses CQ outright.
+- **🔴 iOS progress stream**: stream handler no longer captures the sink in a
+  throwing escape position; `FlutterEventSink` is explicitly `@escaping`,
+  eliminating a crash on progress events.
+- **🔴 progress-stream lifecycle**: Dart side ignores events/errors after the
+  controller is closed and `_markTerminal` now *keeps* jobs in the terminated
+  set (previously removed — stale stream registrations could leak native
+  channel subscriptions).
+- **iOS podspec renamed** to `flutter_handbreak.podspec` (was `handbreak`) —
+  must match the package name for CocoaPods integration.
+- **Example upgraded to a standalone app**: Android/iOS host projects,
+  camera-roll picking (`image_picker`), self-contained integration lanes with
+  bundled fixtures, and a real widget smoke test (template counter test was
+  broken).
+- `tool/verify.sh`: `readlink -f` is GNU-only — FLUTTER_ROOT now resolves via
+  `pwd -P`, so the Android lane works on macOS.
+- Verification: analyze clean, 94 Dart unit tests, Swift typecheck, Android
+  JVM tests green, AAR rebuilt (still zero `.so`).
+
 ## 1.0.3 — 2026-08-23 (deep multimedia correctness)
 
 - **🔴 muxer ordering**: audio-transcode track registration counted in

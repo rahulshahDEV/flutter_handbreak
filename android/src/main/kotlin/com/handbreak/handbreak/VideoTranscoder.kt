@@ -235,7 +235,7 @@ object VideoTranscoder {
         var usedHw = false
 
         try {
-            fun buildEncoderFmt(colorFormat: Int?): MediaFormat =
+            fun buildEncoderFmt(colorFormat: Int?, allowCq: Boolean): MediaFormat =
                 MediaFormat.createVideoFormat(mime, outW, outH).apply {
                     setInteger(
                         MediaFormat.KEY_BIT_RATE,
@@ -245,18 +245,28 @@ object VideoTranscoder {
                     setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
                     if (colorFormat != null) setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
                     if (Build.VERSION.SDK_INT >= 24 && colorFormat == null) {
+                        val wantCq = allowCq && (rcMode == "cq" || rcMode == "cq_value")
                         try {
                             setInteger(
                                 MediaFormat.KEY_BITRATE_MODE,
-                                if (rcMode == "cq" || rcMode == "cq_value")
-                                    MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
+                                if (wantCq) MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CQ
                                 else MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR,
                             )
+                            // CQ mode REQUIRES KEY_QUALITY (0-100, higher = better);
+                            // omitting it makes strict c2 codecs reject configure (EINVAL).
+                            if (wantCq) {
+                                setInteger(
+                                    MediaFormat.KEY_QUALITY,
+                                    ((100.0 - (crf ?: 23.0) * 2.0)).toInt().coerceIn(0, 100),
+                                )
+                            }
                         } catch (_: Exception) { /* device lacks CQ — platform default stands */ }
                     }
                 }
 
             // ---- encoder: HW preferred, transparent SW retry unless hardwareOnly ----
+            // Attempt 0: requested CQ (with KEY_QUALITY). Attempt 1: plain VBR —
+            // some encoders reject CQ entirely; degrade instead of failing.
             var encCreated = false
             var lastErr: Exception? = null
             repeat(2) { attempt ->
@@ -264,7 +274,7 @@ object VideoTranscoder {
                 if (!encCreated) {
                     try {
                         val enc = MediaCodec.createEncoderByType(mime)
-                        val fmt = buildEncoderFmt(null) // null color ⇒ Surface mode
+                        val fmt = buildEncoderFmt(null, allowCq = attempt == 0) // null color ⇒ Surface mode
                         enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                         val surface = enc.createInputSurface()
                         enc.start()
@@ -351,7 +361,7 @@ object VideoTranscoder {
                 runCatching { encoderSurface?.release() }
                 encoder = null; encoderSurface = null
                 encoder = MediaCodec.createEncoderByType(mime).also { e ->
-                    e.configure(buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                    e.configure(buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                     e.start()
                 }
                 usedHw = isHardwareCodec(encoder!!.codecInfo)

@@ -1,9 +1,11 @@
 package com.handbreak.handbreak
 
+import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import java.io.File
+import java.nio.ByteBuffer
 
 /**
  * Robust probe — mirrors HandBrake's scan.c title scan.
@@ -39,7 +41,13 @@ object MediaProbe {
                     mime.startsWith("video/") -> {
                         val rawW = safeInt(fmt, MediaFormat.KEY_WIDTH, 0)
                         val rawH = safeInt(fmt, MediaFormat.KEY_HEIGHT, 0)
-                        val rotation = safeInt(fmt, MediaFormat.KEY_ROTATION, 0)
+                        // KEY_ROTATION is often absent from extractor output; fall back to
+                        // MediaMetadataRetriever's video rotation (tkhd matrix on ISO-BMFF).
+                        var rotation = safeInt(fmt, MediaFormat.KEY_ROTATION, -1)
+                        if (rotation < 0) {
+                            rotation = retrieveRotation(path)
+                            if (rotation < 0) rotation = 0
+                        }
                         // rotation-corrected dimensions (HandBrake does this in scan)
                         val (w, h) = if (rotation == 90 || rotation == 270) rawH to rawW else rawW to rawH
                         val fps = run {
@@ -107,6 +115,22 @@ object MediaProbe {
             if (durationMs == 0L) {
                 durationMs = retrieveDurationMs(path)
             }
+
+            // Truncation guard: moov-fronted files parse fine even when badly cut short.
+            // Compare the last video/audio sample PTS with the declared duration —
+            // a large gap means the media data is missing (corrupt/truncated input).
+            val firstVideo = videoStreams.firstOrNull()
+            if (firstVideo != null) {
+                val declaredUs = (firstVideo["durationMs"] as? Int ?: 0) * 1000L
+                if (declaredUs > 0) {
+                    val lastPtsUs = lastSampleTimeUs(extractor, firstVideo["index"] as Int)
+                    if (lastPtsUs in 1 until declaredUs / 2) {
+                        throw IllegalArgumentException(
+                            "Truncated media: playable ${lastPtsUs / 1000}ms of ${declaredUs / 1000}ms",
+                        )
+                    }
+                }
+            }
             // container already guessed; could refine via extractor
         } catch (e: Exception) {
             // If extractor fails completely (corrupt), try retriever path
@@ -145,6 +169,33 @@ object MediaProbe {
             val d = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             d
         } catch (_: Exception) { 0L } finally { try { r.release() } catch (_: Exception) {} }
+    }
+
+    /** Rotation in degrees (0/90/180/270) from the container matrix; -1 when unknown. */
+    private fun retrieveRotation(path: String): Int {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(path)
+            r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: -1
+        } catch (_: Exception) { -1 } finally { try { r.release() } catch (_: Exception) {} }
+    }
+
+    /** Timestamp (µs) of the last sample on the track, without decoding. -1 if unreadable. */
+    private fun lastSampleTimeUs(extractor: MediaExtractor, trackIndex: Int): Long {
+        return try {
+            extractor.selectTrack(trackIndex)
+            var last = -1L
+            val buf = MediaCodec.BufferInfo()
+            while (true) {
+                val idx = extractor.sampleTrackIndex
+                if (idx < 0) break
+                val size = extractor.readSampleData(ByteBuffer.allocate(1 shl 16), 0)
+                if (size < 0) break
+                last = extractor.sampleTime
+                if (!extractor.advance()) break
+            }
+            last
+        } catch (_: Exception) { -1L }
     }
 
     private fun guessContainer(path: String): String {

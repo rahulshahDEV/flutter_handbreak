@@ -116,8 +116,8 @@ public class HandbreakPlugin: NSObject, FlutterPlugin {
         let channel = FlutterEventChannel(name: "handbreak/progress/\(jobId)", binaryMessenger: messenger)
         channel.setStreamHandler(ProgressStreamHandler(
             onListen: { [weak self] sink in
-                self?.manager.setProgressSink(jobId: jobId, sink: sink.map { s in
-                    { payload in DispatchQueue.main.async { s(payload) } }
+                self?.manager.setProgressSink(jobId: jobId, sink: { payload in
+                    DispatchQueue.main.async { sink(payload) }
                 })
             },
             onCancel: { [weak self] in
@@ -131,10 +131,10 @@ public class HandbreakPlugin: NSObject, FlutterPlugin {
 
 /// Clean stream handler — no inout capture, no unsafe pointers.
 private final class ProgressStreamHandler: NSObject, FlutterStreamHandler {
-    private let onListen: (FlutterEventSink) -> Void
+    private let onListen: (@escaping FlutterEventSink) -> Void
     private let onCancel: () -> Void
 
-    init(onListen: @escaping (FlutterEventSink) -> Void, onCancel: @escaping () -> Void) {
+    init(onListen: @escaping (@escaping FlutterEventSink) -> Void, onCancel: @escaping () -> Void) {
         self.onListen = onListen
         self.onCancel = onCancel
         super.init()

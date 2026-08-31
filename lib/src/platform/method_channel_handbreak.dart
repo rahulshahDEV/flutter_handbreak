@@ -136,6 +136,7 @@ class MethodChannelHandbreak extends HandbreakPlatform {
       sub = channel.receiveBroadcastStream().listen(
         (event) {
           if (event is! Map) return;
+          if (controller.isClosed) return; // terminal already handled elsewhere
           final m = Map<String, dynamic>.from(event);
           if (m.containsKey('error')) {
             controller.addError(
@@ -149,7 +150,9 @@ class MethodChannelHandbreak extends HandbreakPlatform {
           }
           controller.add(CompressionProgress.fromMap(m));
         },
-        onError: (Object e) => controller.addError(e),
+        onError: (Object e) {
+          if (!controller.isClosed) controller.addError(e);
+        },
         onDone: () => _finish(jobId, sub, controller),
         cancelOnError: false,
       );
@@ -170,8 +173,8 @@ class MethodChannelHandbreak extends HandbreakPlatform {
   /// Internal hook used by waitForResult/dispose to mark terminal state so
   /// cached streams stop holding native channel registrations.
   void _markTerminal(String jobId) {
+    _terminatedJobs.add(jobId);
     final c = _progressControllers.remove(jobId);
-    _terminatedJobs.remove(jobId);
     if (c != null && !c.isClosed) c.close();
   }
 

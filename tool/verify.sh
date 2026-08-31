@@ -34,8 +34,9 @@ fi
 
 if [ -n "$GRADLE_BIN" ] && [ -d "${ANDROID_HOME:-$HOME/Library/Android/sdk}/platforms" ]; then
   echo "== 6/7 Android JVM tests =="
-  (cd android && FLUTTER_ROOT="$(dirname "$(dirname "$(readlink -f "$(command -v flutter)")")")" \
-    "$GRADLE_BIN" testDebugUnitTest --no-daemon)
+  # readlink -f is GNU-only; resolve physically with pwd -P (macOS + Linux).
+  FLUTTER_ROOT="$(cd "$(dirname "$(command -v flutter)")/.." && pwd -P)"
+  (cd android && FLUTTER_ROOT="$FLUTTER_ROOT" "$GRADLE_BIN" testDebugUnitTest --no-daemon)
   echo "== 7/7 Android AAR =="
   (cd android && "$GRADLE_BIN" assembleRelease --no-daemon)
 else

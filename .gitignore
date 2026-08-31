@@ -56,3 +56,5 @@ doc/api/
 
 # Real-media fixtures (licensing/size — never commit)
 tool/fixtures/
+# Fixture copies for the self-contained example lane (generated from tool/fixtures)
+example/fixtures/

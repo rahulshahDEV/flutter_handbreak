@@ -138,7 +138,9 @@ void main() {
       );
       expect(plan.rateControlMode, 'cq');
       expect(
-          plan.crf, QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264),);
+        plan.crf,
+        QualityMapper.crfFor(VideoQuality.medium, VideoCodec.h264),
+      );
       expect(plan.useHardware, isTrue);
     });
   });

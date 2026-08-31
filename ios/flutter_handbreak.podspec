@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name             = 'handbreak'
+  s.name             = 'flutter_handbreak'
   s.version          = '0.1.0'
   s.summary          = 'HandBrake-inspired video & image compression for Flutter.'
   s.description      = <<-DESC
