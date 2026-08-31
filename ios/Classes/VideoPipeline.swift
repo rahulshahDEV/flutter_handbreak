@@ -36,9 +36,9 @@ enum VideoPipeline {
                 manager.fail(job: job, code: "INVALID_INPUT", message: "No video track")
                 return
             }
-            let naturalSize = videoTrack.naturalSize.applying(videoTrack.preferredTransform)
-            let srcW = abs(Int(naturalSize.width.rounded()))
-            let srcH = abs(Int(naturalSize.height.rounded()))
+            let rawSize = videoTrack.naturalSize
+            let srcW = abs(Int(rawSize.width.rounded()))
+            let srcH = abs(Int(rawSize.height.rounded()))
             let srcFps = Double(videoTrack.nominalFrameRate > 0 ? videoTrack.nominalFrameRate : 30)
 
             let durationMs = Int((CMTimeGetSeconds(asset.duration) * 1000).rounded())
@@ -96,45 +96,42 @@ enum VideoPipeline {
                 notes.append("softwareOnly requested: iOS AVAssetExportSession cannot force Apple's software encoder; recorded honestly instead of enforced.")
             }
 
-            // ---- composition ----
-            let composition = AVMutableComposition()
-            guard let compVideo = composition.addMutableTrack(withMediaType: .video,
-                                                               preferredTrackID: kCMPersistentTrackID_Invalid) else {
-                manager.fail(job: job, code: "ENCODING_ERROR", message: "Failed to create composition track")
-                return
-            }
-            try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration),
-                                          of: videoTrack, at: .zero)
-            // Orientation applied EXACTLY ONCE (P1-2):
-            // - no videoComposition → AVFoundation applies the track transform
-            // - videoComposition present → layer instruction owns the transform,
-            //   track transform zeroed (avoid double rotation on resize/fps-cap)
-            compVideo.preferredTransform = videoTrack.preferredTransform
-
-            // audio per plan: remove → no track; copy/encode → carry source track(s).
+            // ---- composition: ONLY for resize / fps-cap ----
+            // Rotation is carried as TRACK METADATA (writerInput.transform),
+            // mirroring the source container and the Android orientation hint —
+            // NO renderer in the common path. AVAssetReaderVideoCompositionOutput
+            // (the pixel renderer) is the known AVFoundation stall point; it is
+            // used only when actual pixel work (resize/fps) is requested.
             let audioMode = plan?.audioMode ?? audioModeLegacy(options)
-            if audioMode != "remove" {
-                for at in asset.tracks(withMediaType: .audio) {
-                    if let compAudio = composition.addMutableTrack(withMediaType: .audio,
-                                                                   preferredTrackID: kCMPersistentTrackID_Invalid) {
-                        try? compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: at, at: .zero)
-                    }
-                }
-            } else {
-                notes.append("Audio removed by request.")
-            }
-
-            // ---- video composition for scale / fps cap / rotation ----
-            // The composition is REQUIRED by AVAssetReaderVideoCompositionOutput
-            // whenever rotation, resize or fps-capping applies — a nil
-            // composition there crashes with NSInternalInconsistencyException.
-            let rotated = videoTrack.preferredTransform != .identity
             let needsResize = size.width != srcW || size.height != srcH
-            let needsComposition = needsResize || limitFrameRate || rotated
+            let needsComposition = needsResize || limitFrameRate
+
+            let readerAsset: AVAsset
+            var videoReadTrack: AVAssetTrack
+            var audioReadTracks: [AVAssetTrack]
             var videoComposition: AVMutableVideoComposition?
             if needsComposition {
+                let composition = AVMutableComposition()
+                guard let compVideo = composition.addMutableTrack(withMediaType: .video,
+                                                                   preferredTrackID: kCMPersistentTrackID_Invalid) else {
+                    manager.fail(job: job, code: "ENCODING_ERROR", message: "Failed to create composition track")
+                    return
+                }
+                try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration),
+                                              of: videoTrack, at: .zero)
                 // Single source of truth for orientation: the layer instruction.
                 compVideo.preferredTransform = .identity
+                // audio per plan: remove → no track; copy/encode → carry source track(s).
+                if audioMode != "remove" {
+                    for at in asset.tracks(withMediaType: .audio) {
+                        if let compAudio = composition.addMutableTrack(withMediaType: .audio,
+                                                                       preferredTrackID: kCMPersistentTrackID_Invalid) {
+                            try? compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: asset.duration), of: at, at: .zero)
+                        }
+                    }
+                } else {
+                    notes.append("Audio removed by request.")
+                }
                 let vc = AVMutableVideoComposition()
                 vc.renderSize = CGSize(width: size.width, height: size.height)
                 // Round fractional FPS (29.97→30, 59.94→60) — frameDuration must be integral (P2-5).
@@ -156,6 +153,13 @@ enum VideoPipeline {
                 instr.layerInstructions = [layer]
                 vc.instructions = [instr]
                 videoComposition = vc
+                readerAsset = composition
+                videoReadTrack = compVideo
+                audioReadTracks = composition.tracks(withMediaType: .audio)
+            } else {
+                readerAsset = asset
+                videoReadTrack = videoTrack
+                audioReadTracks = asset.tracks(withMediaType: .audio)
             }
 
             // ---- HandBrake-style explicit encode: AVAssetReader + AVAssetWriter ----
@@ -170,7 +174,7 @@ enum VideoPipeline {
             try? fm.removeItem(atPath: tmpPath)
             let tmpUrl = URL(fileURLWithPath: tmpPath)
 
-            guard let reader = try? AVAssetReader(asset: composition) else {
+            guard let reader = try? AVAssetReader(asset: readerAsset) else {
                 manager.fail(job: job, code: "ENCODING_ERROR", message: "Failed to create AVAssetReader")
                 return
             }
@@ -178,12 +182,13 @@ enum VideoPipeline {
 
             let videoOutput: AVAssetReaderOutput
             if needsComposition {
-                // videoComposition renders scale/rotation/fps into plan dims.
-                let vOut = AVAssetReaderVideoCompositionOutput(videoTracks: [compVideo], videoSettings: nil)
+                // videoComposition renders scale/fps into plan dims.
+                let vOut = AVAssetReaderVideoCompositionOutput(videoTracks: [videoReadTrack], videoSettings: nil)
                 vOut.videoComposition = videoComposition
                 videoOutput = vOut
             } else {
-                videoOutput = AVAssetReaderTrackOutput(track: compVideo, outputSettings: nil)
+                // Plain track read — compressed samples straight to the writer.
+                videoOutput = AVAssetReaderTrackOutput(track: videoReadTrack, outputSettings: nil)
             }
             guard reader.canAdd(videoOutput) else {
                 manager.fail(job: job, code: "ENCODING_ERROR", message: "Reader rejected video output")
@@ -194,8 +199,8 @@ enum VideoPipeline {
             // Explicit compression properties from the plan (HandBrake param pass).
             let targetBitrateKbps = resolveBitrateKbps(
                 plan: plan, options: options, codecId: codecId,
-                w: needsComposition ? size.width : srcW,
-                h: needsComposition ? size.height : srcH,
+                w: size.width,
+                h: size.height,
                 fps: targetFps)
             var compProps: [String: Any] = [
                 AVVideoAverageBitRateKey: targetBitrateKbps * 1000,
@@ -207,12 +212,17 @@ enum VideoPipeline {
             let videoSettings: [String: Any] = [
                 AVVideoCodecKey: (codecId == "h265" || codecId == "hevc")
                     ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
-                AVVideoWidthKey: needsComposition ? size.width : srcW,
-                AVVideoHeightKey: needsComposition ? size.height : srcH,
+                AVVideoWidthKey: size.width,
+                AVVideoHeightKey: size.height,
                 AVVideoCompressionPropertiesKey: compProps,
             ]
             let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
             videoWriterInput.expectsMediaDataInRealTime = false
+            // Rotation as track metadata (source container style) when the
+            // renderer is not in use — players rotate for display.
+            if !needsComposition {
+                videoWriterInput.transform = videoTrack.preferredTransform
+            }
 
             let writer = try AVAssetWriter(outputURL: tmpUrl, fileType: (container == "mov") ? .mov : .mp4)
             guard writer.canAdd(videoWriterInput) else {
@@ -224,7 +234,7 @@ enum VideoPipeline {
             // ---- audio: passthrough (compressed copy) or AAC transcode ----
             var audioPairs: [(AVAssetReaderOutput, AVAssetWriterInput)] = []
             if audioMode != "remove" {
-                for at in composition.tracks(withMediaType: .audio) {
+                for at in audioReadTracks {
                     let audioInput: AVAssetWriterInput
                     let audioReaderOutput: AVAssetReaderOutput
                     if audioMode == "passthrough" {

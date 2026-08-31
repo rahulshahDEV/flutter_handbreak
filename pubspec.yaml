@@ -2,7 +2,7 @@ name: flutter_handbreak
 description: >
   Lightweight Flutter video & image compression inspired by HandBrake — quality-first,
   hardware-accelerated, any-format fallback. Easy one-liner API with presets & progress.
-version: 1.0.17
+version: 1.0.18
 homepage: https://github.com/rahulshahDEV/flutter_handbreak
 repository: https://github.com/rahulshahDEV/flutter_handbreak
 issue_tracker: https://github.com/rahulshahDEV/flutter_handbreak/issues

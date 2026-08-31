@@ -40,7 +40,10 @@ enum MediaProbe {
 
         var videoStreams: [[String: Any]] = []
         for (idx, track) in videoTracks.enumerated() {
-            let size = track.naturalSize.applying(track.preferredTransform)
+            let rawSize = track.naturalSize
+            let rawW = abs(Int(rawSize.width.rounded()))
+            let rawH = abs(Int(rawSize.height.rounded()))
+            let size = rawSize.applying(track.preferredTransform)
             let w = abs(Int(size.width.rounded()))
             let h = abs(Int(size.height.rounded()))
             let fps = Double(track.nominalFrameRate)
@@ -65,6 +68,10 @@ enum MediaProbe {
                 "codecString": codec,
                 "width": w,
                 "height": h,
+                // STORAGE (decoded) dims — the decoder outputs these; encoders
+                // must be sized from them. width/height are display-corrected.
+                "rawWidth": rawW,
+                "rawHeight": rawH,
                 "rotation": rotation,
                 "frameRate": fps,
                 "averageFrameRate": fps,

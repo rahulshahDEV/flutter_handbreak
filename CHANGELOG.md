@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.18 — 2026-08-31 (iOS: no-renderer common path — 20% stall eliminated)
+
+- **🔴 stall fix**: encodes of rotated videos froze at ~20%. The common path
+  (rotation + "keep original resolution") went through
+  `AVAssetReaderVideoCompositionOutput` — the pixel renderer — which is a
+  known AVFoundation stall point (rotation + renderSize + reader hangs).
+- **Fix (HandBrake-accurate, mirrors the Android storage-dims approach)**:
+  - rotation is now carried as **track metadata**
+    (`AVAssetWriterInput.transform`) — exactly like the source container and
+    Android's orientation hint; players rotate for display. NO renderer.
+  - the composition/renderer is used ONLY for real pixel work (resize or
+    fps-cap).
+  - the reader/writer now use SOURCE tracks directly (compressed samples in,
+    explicit bitrate encode out — HandBrake's param-pass philosophy).
+  - iOS probe now emits `rawWidth`/`rawHeight` (storage dims) so the Dart
+    plan sizes the encoder at storage dimensions (parity with Android);
+    `srcW/srcH` in the pipeline are storage dims.
+- Swift typecheck + 104/104 Dart tests green.
+
 ## 1.0.17 — 2026-08-31 (iOS encode stall hardening — fail fast, never hang)
 
 - **🔴 hang fix**: encodes could freeze mid-way (e.g. progress stuck at 20%):
