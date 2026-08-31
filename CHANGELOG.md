@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.22 — 2026-08-31 (image: keep HEIC + lower full-res quality for real savings)
+
+- Fix iOS full-resolution image compression producing larger files than the
+  original HEIC photo (`keepOriginalIfSmaller` → `wasKeptOriginal` / `0 saved`):
+  - Example app full-res image quality `82 → 62` so JPEG re-encode at native
+    12 MP is smaller than the source HEIC (~50% more efficient than JPEG).
+  - iOS pipeline now preserves HEIC when the source is HEIC and `format:auto`
+    (`public.heic` written instead of converting HEIC→JPEG, which always
+    inflates the file).
+
 ## 1.0.21 — 2026-08-31 (iOS concurrent transfers — final 9.7% stall fix)
 
 - **🔴 root cause identified**: the single-threaded pump deadlocked when
