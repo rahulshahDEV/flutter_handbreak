@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.20 — 2026-08-31 (iOS: interleaved pump — the 20% reader deadlock fix)
+
+- **🔴 root-cause fix for the 20% freeze**: pumping video-to-completion first
+  then audio lets the reader's unconsumed AUDIO output queue fill up —
+  AVAssetReader stops delivering to ALL outputs once one output's bounded
+  internal queue is full, so `copyNextSampleBuffer()` on video blocks
+  mid-stream (~20% for short clips) and progress freezes. This is the
+  classic multi-output AVAssetReader deadlock.
+- **Fix (HandBrake sync.c interleaver)**: video and audio outputs are now
+  drained CONTINUOUSLY in one loop — one video sample, then one audio
+  sample per iteration, both marked finished at EOF. Neither queue can
+  fill, video PTS advances steadily to 100%, and the writer receives
+  interleaved samples exactly as it expects.
+- Verified end-to-end: common path (decode→encode, rotation as metadata),
+  composition path (resize/fps), audio passthrough/transcode/remove, plus
+  the existing fail-fast watchdog. Swift typecheck + 104/104 Dart tests
+  green.
+
 ## 1.0.19 — 2026-08-31 (iOS: decode-to-raw before encode — crash fix)
 
 - **🔴 crash fix**: the no-renderer path fed COMPRESSED samples from the

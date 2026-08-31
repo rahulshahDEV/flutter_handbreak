@@ -273,7 +273,13 @@ enum VideoPipeline {
                 }
             }
 
-            // ---- pump ----
+            // ---- interleaved pump (HandBrake sync.c interleaver) ----
+            // CRITICAL: AVAssetReader gives each output a bounded internal
+            // queue. Consuming video first lets the unconsumed AUDIO queue
+            // fill, after which the reader stops delivering to ALL outputs
+            // and the video pump blocks mid-stream (the ~20% freeze). Both
+            // outputs must be drained continuously — video and audio samples
+            // are consumed alternately in one loop.
             var lastVideoPts = 0.0
             var videoPumpDone = false
             var videoDoneAt = Date()
@@ -282,36 +288,29 @@ enum VideoPipeline {
                 let t = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
                 ptsLock.lock(); lastVideoPts = max(lastVideoPts, t); ptsLock.unlock()
             }
-            // Fail-fast pump: bounded backpressure with writer/reader status
+            // Fail-fast append: bounded backpressure with writer/reader status
             // checks — a dead codec must never hang the job (spins ≤ 30 s,
             // watchdog cancels BOTH writer and reader to unblock the pump).
-            func pump(_ out: AVAssetReaderOutput, into input: AVAssetWriterInput, trackPts: Bool) throws {
+            func appendSample(_ sb: CMSampleBuffer, to input: AVAssetWriterInput, trackPts: Bool) throws {
                 var spins = 0
-                while let sb = out.copyNextSampleBuffer() {
+                if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
+                while !input.isReadyForMoreMediaData {
                     if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                    spins = 0
-                    while !input.isReadyForMoreMediaData {
-                        if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                        if writer.status == .failed {
-                            throw ProbeError(code: "ENCODING_ERROR",
-                                             message: writer.error?.localizedDescription ?? "Writer failed")
-                        }
-                        if writer.status == .cancelled || reader.status == .failed {
-                            throw ProbeError(code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
-                        }
-                        spins += 1
-                        if spins > 300_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled (30s)") }
-                        usleep(100)
-                    }
-                    if trackPts { record(sb) }
-                    guard input.append(sb) else {
+                    if writer.status == .failed {
                         throw ProbeError(code: "ENCODING_ERROR",
-                                         message: "Writer append failed: \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
+                                         message: writer.error?.localizedDescription ?? "Writer failed")
                     }
+                    if writer.status == .cancelled || reader.status == .failed {
+                        throw ProbeError(code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
+                    }
+                    spins += 1
+                    if spins > 300_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled (30s)") }
+                    usleep(100)
                 }
-                input.markAsFinished()
-                if trackPts {
-                    ptsLock.lock(); videoPumpDone = true; videoDoneAt = Date(); ptsLock.unlock()
+                if trackPts { record(sb) }
+                guard input.append(sb) else {
+                    throw ProbeError(code: "ENCODING_ERROR",
+                                     message: "Writer append failed: \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
                 }
             }
 
@@ -363,8 +362,29 @@ enum VideoPipeline {
             }
 
             do {
-                try pump(videoOutput, into: videoWriterInput, trackPts: true)
-                for (rOut, wIn) in audioPairs { try pump(rOut, into: wIn, trackPts: false) }
+                var videoEof = false
+                var audioEof = [Bool](repeating: false, count: audioPairs.count)
+                while true {
+                    if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
+                    if videoEof && audioEof.allSatisfy({ $0 }) { break }
+                    if !videoEof {
+                        if let sb = videoOutput.copyNextSampleBuffer() {
+                            try appendSample(sb, to: videoWriterInput, trackPts: true)
+                        } else {
+                            videoEof = true
+                            videoWriterInput.markAsFinished()
+                            ptsLock.lock(); videoPumpDone = true; videoDoneAt = Date(); ptsLock.unlock()
+                        }
+                    }
+                    for (i, pair) in audioPairs.enumerated() where !audioEof[i] {
+                        if let sb = pair.0.copyNextSampleBuffer() {
+                            try appendSample(sb, to: pair.1, trackPts: false)
+                        } else {
+                            audioEof[i] = true
+                            pair.1.markAsFinished()
+                        }
+                    }
+                }
                 if reader.status == .reading {
                     if job.isCancelled { reader.cancelReading() }
                 }
