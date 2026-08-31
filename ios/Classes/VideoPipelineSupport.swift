@@ -22,21 +22,21 @@ extension VideoPipeline {
         }
     }
 
-    /// Progress ticker — real session.progress, clamped like sync.c.
-    /// Returns the timer so the pipeline can cancel it deterministically on completion.
-    static func emitProgress(_ manager: JobManager, _ job: Job, _ session: AVAssetExportSession,
-                             _ durationMs: Int, _ targetFps: Int) -> DispatchSourceTimer {
+    /// Progress ticker for the reader/writer pipeline — polls a progress
+    /// closure (video PTS / duration). Returns the timer for deterministic
+    /// cancellation on completion.
+    static func emitProgress(_ manager: JobManager, _ job: Job,
+                             _ durationMs: Int, _ targetFps: Int,
+                             _ progress: @escaping () -> Double) -> DispatchSourceTimer {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
         timer.schedule(deadline: .now(), repeating: .milliseconds(120))
         let estFrames = Int((Double(durationMs) / 1000.0) * Double(max(1, targetFps)))
-        timer.setEventHandler { [weak session] in
-            guard let session = session else { timer.cancel(); return }
+        timer.setEventHandler {
             if job.isCancelled {
-                session.cancelExport()
                 timer.cancel()
                 return
             }
-            let p = min(max(Double(session.progress), 0), 1)
+            let p = min(max(progress(), 0), 1)
             manager.emitProgress(job, [
                 "progress": p,
                 "processedDurationMs": Int(Double(durationMs) * p),
@@ -50,6 +50,41 @@ extension VideoPipeline {
         }
         timer.resume()
         return timer
+    }
+
+    /// HandBrake-style bitrate resolution: ABR from the plan's explicit
+    /// bitrate; CQ mapped to an estimated bitrate via the CRF bpp table
+    /// (identical to the Android/Kotlin resolveTargetBitrate).
+    static func resolveBitrateKbps(plan: ResolvedPlan?, options: [String: Any],
+                                   codecId: String, w: Int, h: Int, fps: Double) -> Int {
+        if let p = plan {
+            if p.rateControlMode == "abr", let kbps = p.bitrateKbps { return kbps }
+            let crf = p.crf ?? 23
+            return estimateBitrateKbps(crf: crf, w: w, h: h, fps: fps, codecId: codecId)
+        }
+        if let legacy = options["legacyAbrKbps"] as? Int { return legacy }
+        return estimateBitrateKbps(crf: options["legacyCrf"] as? Double ?? 23,
+                                   w: w, h: h, fps: fps, codecId: codecId)
+    }
+
+    static func estimateBitrateKbps(crf: Double, w: Int, h: Int, fps: Double, codecId: String) -> Int {
+        let bpp: Double
+        switch crf {
+        case ...19: bpp = 0.13
+        case ...22: bpp = 0.10
+        case ...26: bpp = 0.07
+        case ...30: bpp = 0.045
+        default: bpp = 0.025
+        }
+        let factor: Double
+        switch codecId.lowercased() {
+        case "h265", "hevc": factor = 0.75
+        case "av1", "av01": factor = 0.70
+        case "vp9": factor = 0.78
+        default: factor = 1.0
+        }
+        let kbps = (Double(w) * Double(h) * fps * bpp * factor / 1000.0).rounded()
+        return Int(max(300, min(kbps, 20_000)))
     }
 
     static func finish(job: Job, manager: JobManager, inputPath: String, outputPath: String,

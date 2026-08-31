@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import UIKit
+import VideoToolbox
 
 /// Video transcode executor — runs the Dart-resolved plan via AVFoundation.
 ///
@@ -152,87 +153,212 @@ enum VideoPipeline {
                 videoComposition = vc
             }
 
-            // ---- export preset from resolved geometry/codec ----
-            let preset = exportPreset(for: codecId, height: size.height, targetFps: targetFps)
-
-            guard let session = AVAssetExportSession(asset: composition, presetName: preset) else {
-                manager.fail(job: job, code: "ENCODING_ERROR", message: "Export session creation failed for preset \(preset)")
-                return
-            }
-            job.setTask(session) // synchronized cancellation hook (audit P1-9)
+            // ---- HandBrake-style explicit encode: AVAssetReader + AVAssetWriter ----
+            // AVAssetExportSession presets cannot honor the plan's bitrate/quality
+            // (they re-encode at Apple's fixed ladders → output larger than the
+            // source). The writer pipeline sets explicit compression properties,
+            // mirroring libx264's param pass — the ONLY way to guarantee that
+            // same-resolution compression actually produces a smaller file.
+            let rotated = videoTrack.preferredTransform != .identity
+            let needsComposition = needsResize || limitFrameRate || rotated
 
             // Job-scoped temp file — concurrent jobs can never collide (audit P1-1).
             let tmpPath = outputPath + ".hbtmp.\(job.id)"
             try? fm.removeItem(atPath: tmpPath)
             let tmpUrl = URL(fileURLWithPath: tmpPath)
-            session.outputURL = tmpUrl
-            session.outputFileType = (container == "mov") ? .mov : .mp4
-            session.videoComposition = videoComposition
-            session.shouldOptimizeForNetworkUse = true
-            session.timeRange = CMTimeRange(start: .zero, duration: asset.duration)
 
-            let ticker = emitProgress(manager, job, session, durationMs, Int(targetFps))
+            guard let reader = try? AVAssetReader(asset: composition) else {
+                manager.fail(job: job, code: "ENCODING_ERROR", message: "Failed to create AVAssetReader")
+                return
+            }
+            reader.timeRange = CMTimeRange(start: .zero, duration: asset.duration)
 
-            // 🔴-2: the export wait must be bounded. AVFoundation can in rare
-            // cases stall without completing; a watchdog monitors session.progress
-            // and cancels + fails the job with TIMEOUT instead of hanging forever.
-            let done = DispatchSemaphore(value: 0)
-            var stalled = false
-            let stallLock = NSLock()
-            let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-            watchdog.schedule(deadline: .now() + 30, repeating: 5)
-            var lastProgress = Double(session.progress)
-            watchdog.setEventHandler {
-                let p = Double(session.progress)
-                if session.status == .exporting && p <= lastProgress {
-                    stallLock.lock()
-                    if !stalled {
-                        stalled = true
-                        session.cancelExport()
-                        done.signal()
+            let videoOutput: AVAssetReaderOutput
+            if needsComposition {
+                // videoComposition renders scale/rotation/fps into plan dims.
+                let vOut = AVAssetReaderVideoCompositionOutput(videoTracks: [compVideo], videoSettings: nil)
+                vOut.videoComposition = videoComposition
+                videoOutput = vOut
+            } else {
+                videoOutput = AVAssetReaderTrackOutput(track: compVideo, outputSettings: nil)
+            }
+            guard reader.canAdd(videoOutput) else {
+                manager.fail(job: job, code: "ENCODING_ERROR", message: "Reader rejected video output")
+                return
+            }
+            reader.add(videoOutput)
+
+            // Explicit compression properties from the plan (HandBrake param pass).
+            let targetBitrateKbps = resolveBitrateKbps(
+                plan: plan, options: options, codecId: codecId,
+                w: needsComposition ? size.width : srcW,
+                h: needsComposition ? size.height : srcH,
+                fps: targetFps)
+            var compProps: [String: Any] = [
+                AVVideoAverageBitRateKey: targetBitrateKbps * 1000,
+                AVVideoMaxKeyFrameIntervalKey: max(1, Int(targetFps.rounded()) * 2),
+                AVVideoExpectedSourceFrameRateKey: targetFps,
+            ]
+            compProps[AVVideoProfileLevelKey] = (codecId == "h265" || codecId == "hevc")
+                ? (kVTProfileLevel_HEVC_Main_AutoLevel as String) : AVVideoProfileLevelH264HighAutoLevel
+            let videoSettings: [String: Any] = [
+                AVVideoCodecKey: (codecId == "h265" || codecId == "hevc")
+                    ? AVVideoCodecType.hevc : AVVideoCodecType.h264,
+                AVVideoWidthKey: needsComposition ? size.width : srcW,
+                AVVideoHeightKey: needsComposition ? size.height : srcH,
+                AVVideoCompressionPropertiesKey: compProps,
+            ]
+            let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+            videoWriterInput.expectsMediaDataInRealTime = false
+
+            let writer = try AVAssetWriter(outputURL: tmpUrl, fileType: (container == "mov") ? .mov : .mp4)
+            guard writer.canAdd(videoWriterInput) else {
+                manager.fail(job: job, code: "ENCODING_ERROR", message: "Writer rejected video input")
+                return
+            }
+            writer.add(videoWriterInput)
+
+            // ---- audio: passthrough (compressed copy) or AAC transcode ----
+            var audioPairs: [(AVAssetReaderOutput, AVAssetWriterInput)] = []
+            if audioMode != "remove" {
+                for at in composition.tracks(withMediaType: .audio) {
+                    let audioInput: AVAssetWriterInput
+                    let audioReaderOutput: AVAssetReaderOutput
+                    if audioMode == "passthrough" {
+                        audioReaderOutput = AVAssetReaderTrackOutput(track: at, outputSettings: nil)
+                        audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: nil)
+                    } else {
+                        let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(at.formatDescriptions.first as! CMAudioFormatDescription)
+                        let srcRate = Int(asbd?.pointee.mSampleRate ?? 48000)
+                        let srcCh = min(Int(asbd?.pointee.mChannelsPerFrame ?? 2), 2)
+                        let aacSettings: [String: Any] = [
+                            AVFormatIDKey: kAudioFormatMPEG4AAC,
+                            AVSampleRateKey: srcRate,
+                            AVNumberOfChannelsKey: srcCh,
+                            AVEncoderBitRateKey: (plan?.audioBitrateKbps ?? 128) * 1000,
+                        ]
+                        audioReaderOutput = AVAssetReaderTrackOutput(
+                            track: at, outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
+                        audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: aacSettings)
                     }
-                    stallLock.unlock()
-                }
-                lastProgress = p
-                if session.status != .exporting {
-                    watchdog.cancel()
+                    audioReaderOutput.alwaysCopiesSampleData = false
+                    audioInput.expectsMediaDataInRealTime = false
+                    if reader.canAdd(audioReaderOutput) && writer.canAdd(audioInput) {
+                        reader.add(audioReaderOutput)
+                        writer.add(audioInput)
+                        audioPairs.append((audioReaderOutput, audioInput))
+                    } else {
+                        notes.append("Audio track skipped: reader/writer rejected it.")
+                    }
                 }
             }
+
+            // ---- pump ----
+            var lastVideoPts = 0.0
+            let ptsLock = NSLock()
+            func record(_ sample: CMSampleBuffer) {
+                let t = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
+                ptsLock.lock(); lastVideoPts = max(lastVideoPts, t); ptsLock.unlock()
+            }
+            func pump(_ out: AVAssetReaderOutput, into input: AVAssetWriterInput, trackPts: Bool) throws {
+                while let sb = out.copyNextSampleBuffer() {
+                    if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
+                    // bounded backpressure (writer file-IO paced)
+                    var spins = 0
+                    while !input.isReadyForMoreMediaData {
+                        if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
+                        if spins > 1500_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled") }
+                        spins += 1
+                        usleep(100)
+                    }
+                    if trackPts { record(sb) }
+                    guard input.append(sb) else { throw ProbeError(code: "ENCODING_ERROR", message: "Writer append failed") }
+                }
+                input.markAsFinished()
+            }
+
+            guard writer.startWriting() else {
+                manager.fail(job: job, code: "ENCODING_ERROR", message: writer.error?.localizedDescription ?? "Writer start failed")
+                return
+            }
+            writer.startSession(atSourceTime: .zero)
+            reader.startReading()
+
+            job.setTask(writer)
+
+            // Watchdog: no video-track progress for 30 s ⇒ cancel + TIMEOUT.
+            var stalled = false
+            let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+            watchdog.schedule(deadline: .now() + 30, repeating: 5)
+            var lastPts = 0.0
+            watchdog.setEventHandler {
+                ptsLock.lock(); let p = lastVideoPts; ptsLock.unlock()
+                if writer.status == .writing && p <= lastPts {
+                    stalled = true
+                    writer.cancelWriting()
+                }
+                lastPts = p
+                if writer.status != .writing { watchdog.cancel() }
+            }
             watchdog.resume()
-            session.exportAsynchronously { done.signal() }
-            // Bounded wait: worst case ~30 s after the watchdog cancels.
-            done.wait()
+            let ticker = emitProgress(manager, job, durationMs, Int(targetFps)) {
+                ptsLock.lock(); let v = lastVideoPts; ptsLock.unlock()
+                return durationMs > 0 ? v / (Double(durationMs) / 1000.0) : 0
+            }
+
+            do {
+                try pump(videoOutput, into: videoWriterInput, trackPts: true)
+                for (rOut, wIn) in audioPairs { try pump(rOut, into: wIn, trackPts: false) }
+                if reader.status == .reading {
+                    if job.isCancelled { reader.cancelReading() }
+                }
+                writer.finishWriting {
+                    ptsLock.lock(); lastVideoPts = max(lastVideoPts, Double(durationMs) / 1000.0)
+                    ptsLock.unlock()
+                }
+                while writer.status == .writing {
+                    if job.isCancelled {
+                        writer.cancelWriting()
+                        break
+                    }
+                    if stalled { break }
+                    usleep(50_000)
+                }
+            } catch let e as ProbeError {
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: e.code, message: e.message)
+                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                return
+            } catch {
+                try? fm.removeItem(atPath: tmpPath)
+                manager.fail(job: job, code: "ENCODING_ERROR", message: error.localizedDescription)
+                watchdog.cancel(); ticker.cancel(); job.setTask(nil)
+                return
+            }
             watchdog.cancel()
             ticker.cancel()
             job.setTask(nil)
 
-            stallLock.lock()
-            let wasStalled = stalled
-            stallLock.unlock()
-            if wasStalled {
+            if stalled {
                 try? fm.removeItem(atPath: tmpPath)
-                manager.fail(job: job, code: "TIMEOUT", message: "Export stalled: no progress for 30s")
+                manager.fail(job: job, code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
                 return
             }
-
-            switch session.status {
-            case .completed: break
-            case .cancelled:
+            if job.isCancelled {
                 try? fm.removeItem(atPath: tmpPath)
                 manager.fail(job: job, code: "CANCELLED", message: "Cancelled")
                 return
-            case .failed:
+            }
+            if writer.status != .completed {
                 try? fm.removeItem(atPath: tmpPath)
-                if job.isCancelled {
-                    manager.fail(job: job, code: "CANCELLED", message: "Cancelled")
-                } else {
-                    manager.fail(job: job, code: "ENCODING_ERROR",
-                                 message: session.error?.localizedDescription ?? "Export failed")
-                }
+                manager.fail(job: job, code: "ENCODING_ERROR",
+                             message: writer.error?.localizedDescription ?? "Export failed (status \(writer.status.rawValue))")
                 return
-            default:
+            }
+            if reader.status == .failed {
                 try? fm.removeItem(atPath: tmpPath)
-                manager.fail(job: job, code: "ENCODING_ERROR", message: "Unexpected export status \(session.status.rawValue)")
+                manager.fail(job: job, code: "ENCODING_ERROR",
+                             message: reader.error?.localizedDescription ?? "Reader failed")
                 return
             }
 

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.15 — 2026-08-31 (iOS: explicit reader/writer encode — no more larger files)
+
+- **🔴 iOS never compressed**: `AVAssetExportSession` presets ignore the plan's
+  bitrate/quality entirely — Apple re-encodes at its fixed high-quality
+  ladders, so output was always LARGER than the source (0% saved).
+- **Fix (HandBrake-style, mirrors libx264 param pass)**: replaced the export
+  session with an `AVAssetReader` + `AVAssetWriter` pipeline that sets
+  explicit compression properties — `AVVideoAverageBitRateKey` from the
+  plan (ABR uses the plan bitrate, e.g. the example's ~70% source-bitrate
+  target; CQ maps CRF → bitrate via the same bpp table as Android), 2s
+  keyframe interval, H.264 High / HEVC Main AutoLevel profiles.
+- Rotation/resize/fps-cap still rendered through the video composition;
+  audio follows the plan (passthrough copy or AAC transcode).
+- Progress via video PTS; watchdog + cancellation retained (writer-based).
+- Swift typecheck + 104/104 Dart tests green.
+
 ## 1.0.14 — 2026-08-31 (same-resolution compression must actually save space)
 
 - **Example "saved 0" fix**: with "Keep original resolution" ON, re-encoding
