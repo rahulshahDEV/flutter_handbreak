@@ -174,6 +174,7 @@ class VideoCompressionOptions {
     double? maxFrameRate,
     AudioOptions? audio,
     HardwareAcceleration? hardwareAcceleration,
+    bool? keepOriginalIfSmaller,
     List<VideoFilter>? filters,
     AdvancedEncoderOptions? advanced,
   }) =>
@@ -194,6 +195,8 @@ class VideoCompressionOptions {
         maxFrameRate: maxFrameRate ?? this.maxFrameRate,
         audio: audio ?? this.audio,
         hardwareAcceleration: hardwareAcceleration ?? this.hardwareAcceleration,
+        keepOriginalIfSmaller:
+            keepOriginalIfSmaller ?? this.keepOriginalIfSmaller,
         filters: filters ?? this.filters,
         advanced: advanced ?? this.advanced,
       );

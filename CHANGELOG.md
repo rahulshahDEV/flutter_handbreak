@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.14 — 2026-08-31 (same-resolution compression must actually save space)
+
+- **Example "saved 0" fix**: with "Keep original resolution" ON, re-encoding
+  at full resolution with preset quality produced *larger* outputs for
+  already-efficient sources (video wrote the bigger file, image kept the
+  original → 0% saved). Same-resolution video now targets **~70% of the
+  source bitrate** (HandBrake target-size philosophy — smaller by
+  construction, clamped 64k–40M) and sets `keepOriginalIfSmaller` as a final
+  guard so a larger file never replaces the original.
+- **Honest status messages**: kept-original and zero-savings outcomes now
+  explain WHY ("source already compressed / HEIC / efficient"), instead of
+  "0.0% saved".
+- `VideoCompressionOptions.copyWith` now exposes `keepOriginalIfSmaller`.
+- Tests green (104/104), analyze clean.
+
 ## 1.0.13 — 2026-08-31 (rotation vs storage dimensions — distorted-output fix)
 
 - **🔴 distorted-output fix**: the probe reports rotation-corrected

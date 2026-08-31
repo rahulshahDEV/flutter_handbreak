@@ -95,7 +95,7 @@ class _DemoHomeState extends State<DemoHome> {
     final opts = selectedPreset.toOptions();
     // Keep original resolution (size-preserving compression) or apply caps.
     final resolved = keepOriginalResolution
-        ? opts.copyWith(preserveResolution: true)
+        ? _atSourceResolution(opts)
         : opts.copyWith(maxWidth: 1920, maxHeight: 1080);
     final out = await _outputPath(inputPath!, '.mp4', selectedPreset.name);
     setState(() {
@@ -119,8 +119,7 @@ class _DemoHomeState extends State<DemoHome> {
       final result = await job.result;
       setState(() {
         lastResult = result;
-        status =
-            'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out, hw=${result.usedHardwareAcceleration}';
+        status = _videoDoneStatus(result, out);
         activeJob = null;
       });
     } on CancelledCompressionException {
@@ -134,6 +133,32 @@ class _DemoHomeState extends State<DemoHome> {
         activeJob = null;
       });
     }
+  }
+
+  /// Same-resolution compression must still SAVE space (HandBrake target-size
+  /// idea): target ~70% of the source bitrate when the source rate is known,
+  /// and never replace the original with a larger file.
+  VideoCompressionOptions _atSourceResolution(VideoCompressionOptions opts) {
+    final srcBr = mediaInfo?.overallBitrate ?? 0;
+    return opts.copyWith(
+      preserveResolution: true,
+      keepOriginalIfSmaller: true,
+      rateControl: srcBr > 0
+          ? RateControl.averageBitrate(
+              ((srcBr * 0.7) / 1000).round().clamp(64, 40000),
+            )
+          : opts.rateControl,
+    );
+  }
+
+  String _videoDoneStatus(CompressionResult result, String out) {
+    if (result.wasKeptOriginal) {
+      return 'Kept original — compressed output would be larger (source already efficient)';
+    }
+    if (result.savedBytes == 0) {
+      return 'No savings — output not smaller at this quality (source already compressed)';
+    }
+    return 'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out, hw=${result.usedHardwareAcceleration}';
   }
 
   Future<void> compressImage() async {
@@ -158,8 +183,9 @@ class _DemoHomeState extends State<DemoHome> {
       setState(() {
         // ImageCompressor returns CompressionResult as well
         lastResult = result;
-        status =
-            'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out';
+        status = result.wasKeptOriginal
+            ? 'Kept original — recompressed output would be larger (source may be HEIC or already compressed)'
+            : 'Image done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out';
         activeJob = null;
       });
     } catch (e) {
@@ -288,7 +314,8 @@ class _DemoHomeState extends State<DemoHome> {
             onChanged: (v) => setState(() => keepOriginalResolution = v ?? true),
             title: const Text('Keep original resolution'),
             subtitle: const Text(
-              'Compress without resizing (same width & height as source)',
+              'Same width & height — video targets ~70% of source bitrate; '
+              'never outputs a larger file',
               style: TextStyle(fontSize: 11),
             ),
             contentPadding: EdgeInsets.zero,
