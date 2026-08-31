@@ -8,6 +8,7 @@ void main() {
 
     expect(find.text('Pick Video / Image (Files)'), findsOneWidget);
     expect(find.text('Pick Video from Camera Roll'), findsOneWidget);
+    expect(find.text('Pick Image from Camera Roll'), findsOneWidget);
     expect(find.textContaining('Pick a video or image'), findsOneWidget);
   });
 }

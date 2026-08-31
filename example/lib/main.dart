@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_handbreak/handbreak.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() => runApp(const HandbreakDemoApp());
@@ -47,6 +49,12 @@ class _DemoHomeState extends State<DemoHome> {
     await _onPicked(file.path);
   }
 
+  Future<void> pickImageFromGallery() async {
+    final file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (file == null) return;
+    await _onPicked(file.path);
+  }
+
   Future<void> _onPicked(String path) async {
     setState(() {
       inputPath = path;
@@ -70,10 +78,15 @@ class _DemoHomeState extends State<DemoHome> {
     }
   }
 
-  Future<String> _outputPath(String input, String ext) async {
-    final dir = await getTemporaryDirectory();
+  Future<String> _outputPath(String input, String ext, String tag) async {
+    // Documents dir — persists across runs and is user-visible in the Files
+    // app (iOS exposes it via UIFileSharingEnabled; Android via file managers).
+    final dir = await getApplicationDocumentsDirectory();
     final base = input.split('/').last.split('.').first;
-    return '${dir.path}/${base}_handbreak_out$ext';
+    // Unique per run — repeated compressions (e.g. different presets) must
+    // never collide with a previous output file.
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    return '${dir.path}/${base}_${tag}_handbreak_out_$stamp$ext';
   }
 
   Future<void> compressVideo() async {
@@ -81,7 +94,7 @@ class _DemoHomeState extends State<DemoHome> {
     final opts = selectedPreset.toOptions();
     // Demonstrate explicit options override: cap at 1080p, hardware auto
     final resolved = opts.copyWith(maxWidth: 1920, maxHeight: 1080);
-    final out = await _outputPath(inputPath!, '.mp4');
+    final out = await _outputPath(inputPath!, '.mp4', selectedPreset.name);
     setState(() {
       status = 'Compressing with ${selectedPreset.displayName} ...';
       progress = null;
@@ -104,7 +117,7 @@ class _DemoHomeState extends State<DemoHome> {
       setState(() {
         lastResult = result;
         status =
-            'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved, hw=${result.usedHardwareAcceleration}';
+            'Done: ${result.compressionPercentage.toStringAsFixed(1)}% saved → $out, hw=${result.usedHardwareAcceleration}';
         activeJob = null;
       });
     } on CancelledCompressionException {
@@ -122,7 +135,7 @@ class _DemoHomeState extends State<DemoHome> {
 
   Future<void> compressImage() async {
     if (inputPath == null) return;
-    final out = await _outputPath(inputPath!, '.jpg');
+    final out = await _outputPath(inputPath!, '.jpg', 'image');
     setState(() => status = 'Compressing image ...');
     try {
       final job = await ImageCompressor.start(
@@ -157,6 +170,42 @@ class _DemoHomeState extends State<DemoHome> {
     setState(() => status = 'Cancelling ...');
   }
 
+  /// Open the compressed file with the platform's default viewer
+  /// (Android intent / iOS QuickLook).
+  Future<void> openOutput(String path) async {
+    final res = await OpenFilex.open(path);
+    setState(() {
+      status = switch (res.type) {
+        ResultType.done => 'Opened output with default viewer',
+        ResultType.noAppToOpen => 'No app found to open: $path',
+        ResultType.fileNotFound => 'Output file not found: $path',
+        _ => 'Could not open output: ${res.message}',
+      };
+    });
+  }
+
+  Future<void> copyPath(String path) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    setState(() => status = 'Output path copied to clipboard');
+  }
+
+  /// Quality summary of the compressed output (re-probed by native side).
+  String? _outputQualitySummary() {
+    final raw = lastResult?.outputMediaInfo;
+    if (raw == null) return null;
+    try {
+      final m = MediaInfo.fromMap(raw);
+      final v = m.primaryVideo;
+      if (v == null) return null;
+      final br = v.bitRate > 0
+          ? '${(v.bitRate / 1000).toStringAsFixed(0)}kbps'
+          : 'n/a';
+      return 'Output: ${v.width}x${v.height} ${v.codec} ${v.frameRate.toStringAsFixed(1)}fps  $br  ${(m.fileSizeBytes / (1024 * 1024)).toStringAsFixed(2)}MB';
+    } catch (_) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -174,6 +223,12 @@ class _DemoHomeState extends State<DemoHome> {
             onPressed: pickFromCameraRoll,
             icon: const Icon(Icons.photo_library),
             label: const Text('Pick Video from Camera Roll'),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.tonalIcon(
+            onPressed: pickImageFromGallery,
+            icon: const Icon(Icons.image),
+            label: const Text('Pick Image from Camera Roll'),
           ),
           const SizedBox(height: 12),
           if (inputPath != null)
@@ -270,6 +325,28 @@ class _DemoHomeState extends State<DemoHome> {
                       'Output: ${lastResult!.outputPath}',
                       style: const TextStyle(fontSize: 12),
                     ),
+                    if (_outputQualitySummary() != null)
+                      Text(
+                        _outputQualitySummary()!,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        FilledButton.tonalIcon(
+                          onPressed: () => openOutput(lastResult!.outputPath),
+                          icon: const Icon(Icons.open_in_new),
+                          label: const Text('Open Output'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => copyPath(lastResult!.outputPath),
+                          icon: const Icon(Icons.copy),
+                          label: const Text('Copy Path'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       'Size: ${lastResult!.originalSizeBytes} → ${lastResult!.outputSizeBytes}  Saved: ${lastResult!.savedBytes} (${lastResult!.compressionPercentage.toStringAsFixed(1)}%)',
                     ),

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.6 — 2026-08-31 (example: picker UX, findable outputs)
+
+- **Image picking**: "Pick Image from Camera Roll" button (`image_picker`) —
+  previously only videos could be picked, so photos captured on the device
+  could not be compressed.
+- **Unique output files**: example outputs are now `<name>_<preset>_handbreak_
+  out_<timestamp>.mp4` in the app Documents dir — repeated compressions (e.g.
+  a different preset) no longer collide with the previous output
+  (`OutputCreationException`), and every result is preserved for comparison.
+- **Findable results**: Documents-dir output persists across runs; iOS exposes
+  it in the Files app (`UIFileSharingEnabled` + `LSSupportsOpeningDocuments
+  InPlace`). Result card shows the full path, an **Open Output** button
+  (`open_filex` — Android intent / iOS QuickLook), a **Copy Path** button, and
+  a quality summary of the compressed file (resolution, codec, fps, bitrate,
+  size) parsed from `outputMediaInfo`.
+- 96/96 Dart tests green (incl. example widget smoke test), analyze clean.
+
 ## 1.0.5 — 2026-08-31 (channel map cast fix)
 
 - **🔴 crash fix**: `CompressionResult.fromMap` cast
