@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.17 — 2026-08-31 (iOS encode stall hardening — fail fast, never hang)
+
+- **🔴 hang fix**: encodes could freeze mid-way (e.g. progress stuck at 20%):
+  the pump's backpressure loop spun up to 150 s, a blocked
+  `copyNextSampleBuffer()` was never unblocked (reader not cancelled), and
+  the watchdog had a false-stall (video track finished → PTS frozen → it
+  killed the write during audio muxing).
+- **Fixes**:
+  - pump checks writer/reader status every spin — a failed codec surfaces
+    as an immediate `ENCODING_ERROR` with the underlying message; spin
+    budget reduced to 30 s.
+  - watchdog is two-phase: video phase = no PTS progress for 30 s ⇒ stall;
+    audio/finalize phase = writing must complete within 90 s ⇒ stall. On
+    stall it cancels BOTH the writer and the reader so a blocked
+    `copyNextSampleBuffer()` unblocks and the pump exits fast.
+  - final safety valve: 120 s cap on the finish-wait loop.
+  - stalled outcomes report `TIMEOUT` with a clear message.
+- Swift typecheck + 104/104 Dart tests green.
+
 ## 1.0.16 — 2026-08-31 (iOS crash: composition required for rotated sources)
 
 - **🔴 crash fix**: rotated videos (no resize/fps-cap) crashed with

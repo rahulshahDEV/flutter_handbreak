@@ -258,26 +258,44 @@ enum VideoPipeline {
 
             // ---- pump ----
             var lastVideoPts = 0.0
+            var videoPumpDone = false
+            var videoDoneAt = Date()
             let ptsLock = NSLock()
             func record(_ sample: CMSampleBuffer) {
                 let t = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sample))
                 ptsLock.lock(); lastVideoPts = max(lastVideoPts, t); ptsLock.unlock()
             }
+            // Fail-fast pump: bounded backpressure with writer/reader status
+            // checks — a dead codec must never hang the job (spins ≤ 30 s,
+            // watchdog cancels BOTH writer and reader to unblock the pump).
             func pump(_ out: AVAssetReaderOutput, into input: AVAssetWriterInput, trackPts: Bool) throws {
+                var spins = 0
                 while let sb = out.copyNextSampleBuffer() {
                     if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                    // bounded backpressure (writer file-IO paced)
-                    var spins = 0
+                    spins = 0
                     while !input.isReadyForMoreMediaData {
                         if job.isCancelled { throw ProbeError(code: "CANCELLED", message: "Cancelled") }
-                        if spins > 1500_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled") }
+                        if writer.status == .failed {
+                            throw ProbeError(code: "ENCODING_ERROR",
+                                             message: writer.error?.localizedDescription ?? "Writer failed")
+                        }
+                        if writer.status == .cancelled || reader.status == .failed {
+                            throw ProbeError(code: "TIMEOUT", message: "Encode stalled: no progress for 30s")
+                        }
                         spins += 1
+                        if spins > 300_000 { throw ProbeError(code: "TIMEOUT", message: "Writer input stalled (30s)") }
                         usleep(100)
                     }
                     if trackPts { record(sb) }
-                    guard input.append(sb) else { throw ProbeError(code: "ENCODING_ERROR", message: "Writer append failed") }
+                    guard input.append(sb) else {
+                        throw ProbeError(code: "ENCODING_ERROR",
+                                         message: "Writer append failed: \(writer.status.rawValue) \(writer.error?.localizedDescription ?? "")")
+                    }
                 }
                 input.markAsFinished()
+                if trackPts {
+                    ptsLock.lock(); videoPumpDone = true; videoDoneAt = Date(); ptsLock.unlock()
+                }
             }
 
             guard writer.startWriting() else {
@@ -289,16 +307,34 @@ enum VideoPipeline {
 
             job.setTask(writer)
 
-            // Watchdog: no video-track progress for 30 s ⇒ cancel + TIMEOUT.
+            // Watchdog — two phases:
+            //  video phase: no PTS progress for 30 s ⇒ stall (codec hung).
+            //  audio/finalize phase: video done, writing must finish within 90 s.
+            // On stall cancel BOTH writer and reader so a blocked
+            // copyNextSampleBuffer() unblocks and the pump throws fast.
             var stalled = false
             let watchdog = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
             watchdog.schedule(deadline: .now() + 30, repeating: 5)
             var lastPts = 0.0
             watchdog.setEventHandler {
-                ptsLock.lock(); let p = lastVideoPts; ptsLock.unlock()
-                if writer.status == .writing && p <= lastPts {
-                    stalled = true
-                    writer.cancelWriting()
+                if job.isCancelled { return }
+                ptsLock.lock()
+                let p = lastVideoPts
+                let vDone = videoPumpDone
+                let doneAt = videoDoneAt
+                ptsLock.unlock()
+                if writer.status == .writing {
+                    if !vDone {
+                        if p <= lastPts {
+                            stalled = true
+                            writer.cancelWriting()
+                            reader.cancelReading()
+                        }
+                    } else if Date().timeIntervalSince(doneAt) > 90 {
+                        stalled = true
+                        writer.cancelWriting()
+                        reader.cancelReading()
+                    }
                 }
                 lastPts = p
                 if writer.status != .writing { watchdog.cancel() }
@@ -319,17 +355,26 @@ enum VideoPipeline {
                     ptsLock.lock(); lastVideoPts = max(lastVideoPts, Double(durationMs) / 1000.0)
                     ptsLock.unlock()
                 }
+                var waitMs = 0
                 while writer.status == .writing {
                     if job.isCancelled {
                         writer.cancelWriting()
                         break
                     }
                     if stalled { break }
+                    waitMs += 50
+                    if waitMs > 120_000 { // final safety valve
+                        stalled = true
+                        writer.cancelWriting()
+                        reader.cancelReading()
+                        break
+                    }
                     usleep(50_000)
                 }
             } catch let e as ProbeError {
                 try? fm.removeItem(atPath: tmpPath)
-                manager.fail(job: job, code: e.code, message: e.message)
+                manager.fail(job: job, code: stalled ? "TIMEOUT" : e.code,
+                             message: stalled ? "Encode stalled: no progress for 30s" : e.message)
                 watchdog.cancel(); ticker.cancel(); job.setTask(nil)
                 return
             } catch {
