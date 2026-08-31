@@ -159,6 +159,30 @@ object VideoTranscoder {
         jobManager: JobManager,
         onProgress: (Map<String, Any?>) -> Unit,
     ): Map<String, Any?> {
+        try {
+            return transcodeImpl(inputPath, outputPath, optsRaw, jobId, jobManager, onProgress,
+                allowCq = true, forceCpuPath = false)
+        } catch (e: MediaCodec.CodecException) {
+            // Runtime codec death (e.g. "Error 0x80001001" buffer-manager error) is
+            // device/encoder-specific — never fail the job on the first attempt.
+            // Retry once fully degraded: VBR (no CQ, no KEY_QUALITY) + ByteBuffer
+            // YUV input (no input surface). This path avoids both known
+            // breakers: surface+CQ pipelines and strict c2 KEY_QUALITY handling.
+            return transcodeImpl(inputPath, outputPath, optsRaw, jobId, jobManager, onProgress,
+                allowCq = false, forceCpuPath = true)
+        }
+    }
+
+    private fun transcodeImpl(
+        inputPath: String,
+        outputPath: String,
+        optsRaw: Map<String, Any>,
+        jobId: String,
+        jobManager: JobManager,
+        onProgress: (Map<String, Any?>) -> Unit,
+        allowCq: Boolean,
+        forceCpuPath: Boolean,
+    ): Map<String, Any?> {
         val startMs = System.currentTimeMillis()
         val opts = Options(optsRaw)
         val inFile = File(inputPath)
@@ -267,29 +291,52 @@ object VideoTranscoder {
             // ---- encoder: HW preferred, transparent SW retry unless hardwareOnly ----
             // Attempt 0: requested CQ (with KEY_QUALITY). Attempt 1: plain VBR —
             // some encoders reject CQ entirely; degrade instead of failing.
+            // forceCpuPath (degraded retry): ByteBuffer YUV input, no surface.
             var encCreated = false
             var lastErr: Exception? = null
-            repeat(2) { attempt ->
-                checkCancel(jobManager, jobId)
-                if (!encCreated) {
-                    try {
-                        val enc = MediaCodec.createEncoderByType(mime)
-                        val fmt = buildEncoderFmt(null, allowCq = attempt == 0) // null color ⇒ Surface mode
-                        enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                        val surface = enc.createInputSurface()
-                        enc.start()
-                        encoder = enc; encoderSurface = surface
-                        usedHw = isHardwareCodec(enc.codecInfo)
-                        if (!usedHw && requireHw) {
-                            throw IllegalStateException("hardwareOnly requested but '$mime' encoder is software-only")
+            if (forceCpuPath) {
+                try {
+                    val enc = MediaCodec.createEncoderByType(mime)
+                    enc.configure(
+                        buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = allowCq),
+                        null, null, MediaCodec.CONFIGURE_FLAG_ENCODE,
+                    )
+                    enc.start()
+                    encoder = enc
+                    usedHw = isHardwareCodec(enc.codecInfo)
+                    if (!usedHw && requireHw) {
+                        throw IllegalStateException("hardwareOnly requested but '$mime' encoder is software-only")
+                    }
+                    encCreated = true
+                } catch (e: Exception) {
+                    lastErr = e
+                    runCatching { encoder?.stop(); encoder?.release() }
+                    encoder = null
+                    if (requireHw) throw e
+                }
+            } else {
+                repeat(2) { attempt ->
+                    checkCancel(jobManager, jobId)
+                    if (!encCreated) {
+                        try {
+                            val enc = MediaCodec.createEncoderByType(mime)
+                            val fmt = buildEncoderFmt(null, allowCq = allowCq && attempt == 0) // null color ⇒ Surface mode
+                            enc.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                            val surface = enc.createInputSurface()
+                            enc.start()
+                            encoder = enc; encoderSurface = surface
+                            usedHw = isHardwareCodec(enc.codecInfo)
+                            if (!usedHw && requireHw) {
+                                throw IllegalStateException("hardwareOnly requested but '$mime' encoder is software-only")
+                            }
+                            encCreated = true
+                        } catch (e: Exception) {
+                            lastErr = e
+                            runCatching { encoder?.stop(); encoder?.release() }
+                            runCatching { encoderSurface?.release() }
+                            encoder = null; encoderSurface = null
+                            if (requireHw) throw e
                         }
-                        encCreated = true
-                    } catch (e: Exception) {
-                        lastErr = e
-                        runCatching { encoder?.stop(); encoder?.release() }
-                        runCatching { encoderSurface?.release() }
-                        encoder = null; encoderSurface = null
-                        if (requireHw) throw e
                     }
                 }
             }
@@ -339,30 +386,33 @@ object VideoTranscoder {
 
             // ---- decoder: Surface zero-copy preferred, real ByteBuffer fallback ----
             val decMime = decFmtIn.getString(MediaFormat.KEY_MIME) ?: mime
-            var surfaceMode = true
+            var surfaceMode = false
             var decoderCandidate: MediaCodec? = null
-            val surfaceDecodeOk = try {
-                decoderCandidate = MediaCodec.createDecoderByType(decMime)
-                decoderCandidate!!.configure(decFmtIn, encoderSurface, null, 0)
-                decoderCandidate!!.start()
-                decoder = decoderCandidate
-                true
-            } catch (e: Exception) {
-                // release the half-created decoder — no leak (audit P1-6)
-                runCatching { decoderCandidate?.stop() }
-                runCatching { decoderCandidate?.release() }
-                decoderCandidate = null
-                false
+            if (!forceCpuPath) {
+                surfaceMode = try {
+                    decoderCandidate = MediaCodec.createDecoderByType(decMime)
+                    decoderCandidate!!.configure(decFmtIn, encoderSurface, null, 0)
+                    decoderCandidate!!.start()
+                    decoder = decoderCandidate
+                    true
+                } catch (e: Exception) {
+                    // release the half-created decoder — no leak (audit P1-6)
+                    runCatching { decoderCandidate?.stop() }
+                    runCatching { decoderCandidate?.release() }
+                    decoderCandidate = null
+                    false
+                }
             }
-            if (!surfaceDecodeOk) {
+            if (!surfaceMode) {
                 // CPU path: decode YUV_420_888 → NV12 → encoder ByteBuffer input.
-                surfaceMode = false
-                runCatching { encoder?.stop(); encoder?.release() }
-                runCatching { encoderSurface?.release() }
-                encoder = null; encoderSurface = null
-                encoder = MediaCodec.createEncoderByType(mime).also { e ->
-                    e.configure(buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                    e.start()
+                if (encoderSurface != null) {
+                    runCatching { encoder?.stop(); encoder?.release() }
+                    runCatching { encoderSurface?.release() }
+                    encoder = null; encoderSurface = null
+                    encoder = MediaCodec.createEncoderByType(mime).also { e ->
+                        e.configure(buildEncoderFmt(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible, allowCq = allowCq), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                        e.start()
+                    }
                 }
                 usedHw = isHardwareCodec(encoder!!.codecInfo)
                 if (!usedHw && requireHw) {

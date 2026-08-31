@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.7 — 2026-08-31 (Android encode runtime-crash retry)
+
+- **🔴 Android**: a runtime `MediaCodec.CodecException` (e.g. `Error 0x80001001`
+  buffer-manager error) failed the job outright. The transcoder now retries
+  the full encode once with a maximally-compatible degraded profile — VBR (no
+  CQ, no `KEY_QUALITY`) and ByteBuffer YUV input (no input surface). This
+  avoids both known device breakers: surface+CQ pipelines and strict c2
+  `KEY_QUALITY` handling. The CPU-fallback path also now inherits the retry
+  profile instead of forcing CQ unconditionally.
+- Android JVM tests green, analyze clean.
+
 ## 1.0.6 — 2026-08-31 (example: picker UX, findable outputs)
 
 - **Image picking**: "Pick Image from Camera Roll" button (`image_picker`) —
