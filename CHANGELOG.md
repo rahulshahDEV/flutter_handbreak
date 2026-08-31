@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.10 — 2026-08-31 (Android CPU-path frame scaling — BufferOverflow fix)
+
+- **🔴 crash fix**: the ByteBuffer encode path fed *full-source-resolution*
+  frames into an encoder configured at the resized dimensions
+  (`BufferOverflowException @ DirectByteBuffer` in `feedEncoderNv12` — the
+  encoder's input buffers are sized for the target resolution). Surface input
+  scales internally; the CPU path must scale explicitly. Added a tightly
+  packed YUV420 nearest-neighbor scaler (HandBrake swscale stand-in) —
+  decoded frames are now scaled to the encoder's exact size before feeding
+  (NV12 or I420 output matching the negotiated layout). Now every tier of the
+  encode pipeline works for any source resolution.
+- Android JVM tests green, AAR builds (zero `.so`).
+
 ## 1.0.9 — 2026-08-31 (Android 3-tier encode fallback + self-describing errors)
 
 - **Tiered encode pipeline** (HandBrake-style "always produce a result"):

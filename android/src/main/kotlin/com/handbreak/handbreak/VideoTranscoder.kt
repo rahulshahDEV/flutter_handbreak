@@ -586,8 +586,17 @@ object VideoTranscoder {
                                 } else {
                                     val img: Image? = decoder!!.getOutputImage(outIdx)
                                     if (img != null) {
-                                        val nv12 = Yuv.toNv12(img, planarOut = videoEncPlanar)
+                                        // Decoded size ≠ encoder size → scale first
+                                        // (Surface input scales internally; the
+                                        // ByteBuffer path must — feeding full-size
+                                        // frames overflows the encoder's buffers).
+                                        val iw = img.width
+                                        val ih = img.height
+                                        var nv12 = Yuv.toNv12(img, planarOut = videoEncPlanar)
                                         img.close()
+                                        if (iw != outW || ih != outH) {
+                                            nv12 = Yuv.scaleYuv420(nv12, iw, ih, outW, outH, planarOut = videoEncPlanar)
+                                        }
                                         feedEncoderNv12(encoder!!, nv12, decInfo.presentationTimeUs, timeoutUs, jobManager, jobId)
                                         decoder!!.releaseOutputBuffer(outIdx, false)
                                         noteVideoActivity()
@@ -1185,6 +1194,64 @@ internal object Yuv {
             }
         }
         return if (pos == out.size) out else out.copyOf(pos)
+    }
+
+    /**
+     * Nearest-neighbor YUV420 scale (HandBrake swscale stand-in for the
+     * ByteBuffer path). Input layout must match [planarOut]: tightly-packed
+     * NV12 (Y + interleaved UV) or I420 (Y + U + V). Output is tightly-packed
+     * at dstW×dstH in the same layout — always exactly dstW*dstH*3/2 bytes,
+     * ready for the encoder's input buffers.
+     */
+    fun scaleYuv420(src: ByteArray, srcW: Int, srcH: Int, dstW: Int, dstH: Int, planarOut: Boolean): ByteArray {
+        if (srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0) return src
+        if (srcW == dstW && srcH == dstH) return src
+        val out = ByteArray(dstW * dstH * 3 / 2)
+        val scw = srcW / 2
+        val sch = srcH / 2
+        val dcw = dstW / 2
+        val dch = dstH / 2
+
+        // --- Y ---
+        for (y in 0 until dstH) {
+            val sy = (y * srcH / dstH).coerceIn(0, srcH - 1)
+            val srcRow = sy * srcW
+            val dstRow = y * dstW
+            for (x in 0 until dstW) {
+                out[dstRow + x] = src[srcRow + (x * srcW / dstW).coerceIn(0, srcW - 1)]
+            }
+        }
+
+        val dstUvBase = dstW * dstH
+        val srcUvBase = srcW * srcH
+        if (planarOut) {
+            // --- U then V planes ---
+            for (plane in 0..1) {
+                val base = dstUvBase + plane * dcw * dch
+                val sBase = srcUvBase + plane * scw * sch
+                for (y in 0 until dch) {
+                    val sy = (y * sch / dch).coerceIn(0, sch - 1)
+                    val sRow = sBase + sy * scw
+                    val dRow = base + y * dcw
+                    for (x in 0 until dcw) {
+                        out[dRow + x] = src[sRow + (x * scw / dcw).coerceIn(0, scw - 1)]
+                    }
+                }
+            }
+        } else {
+            // --- interleaved UV ---
+            for (y in 0 until dch) {
+                val sy = (y * sch / dch).coerceIn(0, sch - 1)
+                val sRow = srcUvBase + sy * scw * 2
+                val dRow = dstUvBase + y * dcw * 2
+                for (x in 0 until dcw) {
+                    val sx = (x * scw / dcw).coerceIn(0, scw - 1) * 2
+                    out[dRow + x * 2] = src[sRow + sx]
+                    out[dRow + x * 2 + 1] = src[sRow + sx + 1]
+                }
+            }
+        }
+        return out
     }
 }
 
