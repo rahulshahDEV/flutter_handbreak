@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5 — 2026-08-31
+
+- Docs: consolidate changelog for published `1.0.4` (was split across `1.0.4`–`1.0.22` dev tags in git; pub.dev tarball now matches GitHub).
+
 ## 1.0.4 — 2026-08-31
 
 Comprehensive update since 1.0.3 — published as 1.0.4 on pub.dev. This single release consolidates all fixes that were versioned as 1.0.4–1.0.22 during development:
