@@ -220,8 +220,12 @@ object VideoTranscoder {
         val probeInfo = MediaProbe.probe(inputPath)
         val streams = probeVideoStreams(probeInfo)
         if (streams.isEmpty()) throw IllegalArgumentException("No decodable video stream")
-        val srcW = streams[0]["width"] as Int
-        val srcH = streams[0]["height"] as Int
+        // STORAGE dims drive the encode (decoder outputs these; rotation is
+        // carried by the container orientation hint, like the source file).
+        val srcW = (streams[0]["rawWidth"] as? Int)?.takeIf { it > 0 }
+            ?: (streams[0]["width"] as Int)
+        val srcH = (streams[0]["rawHeight"] as? Int)?.takeIf { it > 0 }
+            ?: (streams[0]["height"] as Int)
         val rotation = streams[0]["rotation"] as Int
 
         // ---- effective config (plan wins; legacy fallback for pre-plan callers) ----

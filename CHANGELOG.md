@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.13 — 2026-08-31 (rotation vs storage dimensions — distorted-output fix)
+
+- **🔴 distorted-output fix**: the probe reports rotation-corrected
+  dimensions (e.g. 1080×1920 for a rotated 1920×1080 file), but the
+  DECODER always outputs STORAGE-dimension frames (1920×1080). The encode
+  pipeline was sized from the display dims — the encoder expected portrait
+  frames while receiving landscape → squashed/stretched, wrong-ratio,
+  unusable output (affects every tier, surface and ByteBuffer alike).
+- **Fix (HandBrake-accurate)**: the encoder is now sized from STORAGE
+  (decoded) dimensions — `rawWidth`/`rawHeight` added to the probe and
+  `VideoStreamInfo` (display `width`/`height` stay rotation-corrected for
+  app logic). Rotation is carried by the container orientation hint, exactly
+  like the source file; players rotate for display. The CPU-path scaler now
+  maps decoded → encoded dims 1:1 — no aspect distortion at any tier.
+- Regression test: rotated source encodes at storage dims, not display dims.
+- Android JVM tests + 103/103 Dart tests green.
+
 ## 1.0.12 — 2026-08-31 (Android input-layout fix — corrupt video output)
 
 - **🔴 corrupt-output fix**: the ByteBuffer encode path decided the input

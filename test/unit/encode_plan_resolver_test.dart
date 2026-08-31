@@ -4,6 +4,9 @@ import 'package:flutter_handbreak/handbreak.dart';
 MediaInfo _info({
   int w = 1920,
   int h = 1080,
+  int? rawW,
+  int? rawH,
+  int rotation = 0,
   double fps = 30,
   String videoCodec = 'h264',
   String? audioCodec = 'aac',
@@ -23,7 +26,9 @@ MediaInfo _info({
         'codecString': videoCodec,
         'width': w,
         'height': h,
-        'rotation': 0,
+        if (rawW != null) 'rawWidth': rawW,
+        if (rawH != null) 'rawHeight': rawH,
+        'rotation': rotation,
         'frameRate': fps,
         'averageFrameRate': fps,
         'isVariableFrameRate': false,
@@ -114,6 +119,24 @@ void main() {
       );
       expect(plan.width, 1080);
       expect(plan.height, 1920);
+    });
+    test('rotated source encodes at STORAGE dims, not display dims', () {
+      // Rotated 1920x1080: display-corrected 1080x1920, storage 1920x1080.
+      final plan = EncodePlanResolver.resolve(
+        info: _info(
+          w: 1080,
+          h: 1920,
+          rawW: 1920,
+          rawH: 1080,
+          rotation: 90,
+        ),
+        opts: const VideoCompressionOptions(preserveResolution: true),
+        caps: _caps('android'),
+      );
+      // Encoder must match what the decoder outputs (storage) — rotation is
+      // carried by the container orientation hint.
+      expect(plan.width, 1920);
+      expect(plan.height, 1080);
     });
   });
 

@@ -5,6 +5,8 @@ class VideoStreamInfo {
     required this.codecString,
     required this.width,
     required this.height,
+    this.rawWidth = 0,
+    this.rawHeight = 0,
     required this.rotation,
     required this.frameRate,
     required this.averageFrameRate,
@@ -29,8 +31,16 @@ class VideoStreamInfo {
   final int index;
   final String codec;
   final String codecString;
+
+  /// Rotation-corrected display dimensions.
   final int width;
   final int height;
+
+  /// Storage (decoded) dimensions — what the decoder actually outputs.
+  /// Encoders must be sized from these; [width]/[height] are display logic.
+  final int rawWidth;
+  final int rawHeight;
+
   final int
       rotation; // 0/90/180/270 — rotation-corrected dimensions already applied to width/height
   final double frameRate;
@@ -52,6 +62,10 @@ class VideoStreamInfo {
   final String? level;
   final String? language;
 
+  /// Storage (decoded) dimensions — falls back to display dims for legacy payloads.
+  int get storageWidth => rawWidth > 0 ? rawWidth : width;
+  int get storageHeight => rawHeight > 0 ? rawHeight : height;
+
   /// Portrait after rotation correction?
   bool get isPortrait => height > width;
 
@@ -62,6 +76,8 @@ class VideoStreamInfo {
             m['codecString'] as String? ?? m['codec'] as String? ?? 'unknown',
         width: m['width'] as int? ?? 0,
         height: m['height'] as int? ?? 0,
+        rawWidth: m['rawWidth'] as int? ?? 0,
+        rawHeight: m['rawHeight'] as int? ?? 0,
         rotation: m['rotation'] as int? ?? 0,
         frameRate: (m['frameRate'] as num?)?.toDouble() ?? 0,
         averageFrameRate: (m['averageFrameRate'] as num?)?.toDouble() ??
@@ -96,6 +112,8 @@ class VideoStreamInfo {
         'codecString': codecString,
         'width': width,
         'height': height,
+        'rawWidth': rawWidth,
+        'rawHeight': rawHeight,
         'rotation': rotation,
         'frameRate': frameRate,
         'averageFrameRate': averageFrameRate,

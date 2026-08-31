@@ -71,6 +71,12 @@ object MediaProbe {
                             "codecString" to mime,
                             "width" to w,
                             "height" to h,
+                            // STORAGE (decoded) dimensions — the decoder outputs
+                            // frames at these; the encoder must be sized to match.
+                            // width/height are rotation-corrected for display logic;
+                            // rawWidth/rawHeight drive the encode pipeline.
+                            "rawWidth" to rawW,
+                            "rawHeight" to rawH,
                             "rotation" to rotation,
                             "frameRate" to fps,
                             "averageFrameRate" to avgFps,

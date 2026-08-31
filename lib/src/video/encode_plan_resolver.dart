@@ -217,8 +217,11 @@ class EncodePlanResolver {
     required HardwareCapabilities caps,
   }) {
     final v = info.primaryVideo;
-    final srcW = v?.width ?? 0;
-    final srcH = v?.height ?? 0;
+    // Encode dimensions come from STORAGE (decoded) size — the decoder outputs
+    // frames at storage dims; rotation is carried by the container hint.
+    // Display-corrected width/height are for app logic only.
+    final srcW = v?.storageWidth ?? 0;
+    final srcH = v?.storageHeight ?? 0;
     if (srcW <= 0 || srcH <= 0) {
       throw UnsupportedFormatException(
         'No decodable video stream in ${info.path}',
